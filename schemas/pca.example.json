@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "dataset": {
+    "path": "dataset.csv",
+    "delimiter": ",",
+    "orientation": "variables_by_samples",
+    "axis_column": 0
+  },
+  "method": "pca",
+  "preprocessing": {
+    "mean_center": true,
+    "scaling": "pareto"
+  },
+  "validation": {
+    "strategy": "none",
+    "repeats": 20,
+    "train_fraction": 0.8,
+    "seed": 1234
+  },
+  "selected_groups": [],
+  "n_components": null,
+  "random_seed": 1234
+}

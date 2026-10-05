@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arii"
+version = "1.0.0"
+description = "Open-source single-omics chemometrics workbench"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Gabriel Anderson", email = "gabimiemp@gmail.com"}]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+dependencies = [
+  "numpy>=2.0",
+  "PySide6==6.11.2",
+  "pyqtgraph>=0.13",
+  "paramiko>=3.5",
+  "keyring>=25",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+]
+build = [
+  "PyInstaller>=6.20,<7",
+  "Pillow>=11,<13",
+]
+
+[project.scripts]
+arii = "arii.cli:main"
+arii-gui = "arii.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

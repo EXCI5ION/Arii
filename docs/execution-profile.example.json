@@ -1,0 +1,14 @@
+{
+  "profile_id": "my-cluster",
+  "display_name": "Clúster de mi institución",
+  "host": "login.cluster.example.edu",
+  "username": "my-individual-account",
+  "scheduler": "slurm",
+  "remote_workspace": "/scratch/my-individual-account/arii",
+  "port": 22,
+  "authentication": "ssh_agent",
+  "ssh_config_host": null,
+  "account": "research-project",
+  "partition": null,
+  "qos": null
+}
