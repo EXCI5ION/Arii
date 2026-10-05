@@ -10,8 +10,8 @@
   <a href="https://github.com/EXCI5ION/Arii/releases/latest">
     <img src="https://img.shields.io/github/v/release/EXCI5ION/Arii?label=Descargar&amp;logo=github&amp;color=2ea44f" alt="Descargar la última versión">
   </a>
-  <a href="https://doi.org/xx">
-    <img src="https://zenodo.org/badge/DOI/xx" alt="DOI">
+  <a href="https://doi.org/10.5281/zenodo.23167788">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.23167788.svg" alt="DOI">
   </a>
 </p>
 
@@ -58,13 +58,14 @@ opcional de prueba mediante Slurm.
 
 ## Instalación desde el código fuente
 
-Arii requiere **Python 3.12**. Para ejecutar los modelos también deben estar disponibles `Rscript`, `mixOmics` y
-`jsonlite`.
+Arii 1.0.0 requiere **Python 3.12** y la serie **R 4.5.x**. Las instalaciones desde código fuente
+usan [Bioconductor 3.22](https://bioconductor.org/news/bioc_3_22_release/),
+compatible con R 4.5.
 
 ### Windows — PowerShell
 
 Instala previamente [Python 3.12](https://www.python.org/downloads/) y
-[R](https://cran.r-project.org/bin/windows/base/), y asegúrate de que
+[R 4.5.2 para Windows](https://cran.r-project.org/bin/windows/base/old/4.5.2/R-4.5.2-win.exe), y asegúrate de que
 `Rscript.exe` esté disponible en `PATH`.
 
 ```powershell
@@ -74,7 +75,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install .
-Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org")'
+Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install(version="3.22", ask=FALSE); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org"); stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
 arii-gui
 ```
 
@@ -82,8 +83,10 @@ Si PowerShell bloquea la activación del entorno, ejecuta directamente `.\.venv\
 
 ### Linux
 
-Instala Python 3.12, R y las bibliotecas gráficas que requiera Qt
-mediante el gestor de paquetes de tu distribución. Después ejecuta:
+Instala Python 3.12, las bibliotecas gráficas que requiera Qt y **R 4.5.3**.
+Si tu distribución no conserva esa versión, está disponible el
+[código fuente oficial de R 4.5.3](https://cran.r-project.org/src/base/R-4/R-4.5.3.tar.gz).
+Después ejecuta:
 
 ```bash
 git clone --branch v1.0.0 --depth 1 https://github.com/EXCI5ION/Arii.git
@@ -92,14 +95,15 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install .
-Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org")'
+Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install(version="3.22", ask=FALSE); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org"); stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
 arii-gui
 ```
 
 ### macOS
 
-Instala Python 3.12, R y [XQuartz](https://www.xquartz.org/), requerido por `mixOmics` en macOS. En una
-terminal `bash` o `zsh` ejecuta:
+Instala Python 3.12, [R 4.5.3 para Apple silicon](https://cran.r-project.org/bin/macosx/big-sur-arm64/base/R-4.5.3-arm64.pkg)
+o [R 4.5.3 para Intel](https://cran.r-project.org/bin/macosx/big-sur-x86_64/base/R-4.5.3-x86_64.pkg), según tu equipo, y
+[XQuartz](https://www.xquartz.org/), requerido por `mixOmics` en macOS. En una terminal `bash` o `zsh` ejecuta:
 
 ```bash
 git clone --branch v1.0.0 --depth 1 https://github.com/EXCI5ION/Arii.git
@@ -108,12 +112,15 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install .
-Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org")'
+Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install(version="3.22", ask=FALSE); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org"); stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
 arii-gui
 ```
 
-En Linux y macOS, Arii 1.0.0 depende de la compatibilidad de Qt, R y Bioconductor con el sistema. `mixOmics` se instala
-mediante `BiocManager`, el método recomendado por Bioconductor.
+En Linux y macOS, Arii 1.0.0 depende además de la compatibilidad de Qt con el
+sistema. `mixOmics` se instala mediante `BiocManager`, el método recomendado por
+Bioconductor. El instalador de Windows y el runtime para clúster ya contienen R
+y todas estas dependencias, por lo que sus usuarios no deben instalarlas por
+separado.
 
 ## Funcionalidades
 
@@ -168,9 +175,10 @@ Los metadatos de autoría y versión se encuentran en
 [`CITATION.cff`](CITATION.cff). GitHub puede generar desde ese archivo una
 referencia en formatos APA y BibTeX.
 
-Tras publicar la primera release, Zenodo proporcionará un DOI específico para
-Arii 1.0.0 y un DOI conceptual que agrupará todas las versiones futuras. Ambos
-se incorporarán aquí y en `CITATION.cff`.
+Para citar exactamente Arii 1.0.0, utilice el DOI específico
+[`10.5281/zenodo.23167789`](https://doi.org/10.5281/zenodo.23167789). El DOI
+conceptual [`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788)
+representa el proyecto Arii y dirige siempre a su versión más reciente.
 
 ## Licencia
 
