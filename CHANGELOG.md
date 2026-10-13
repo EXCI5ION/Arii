@@ -1,6 +1,6 @@
 # Historial de cambios
 
-## 1.0.1 - 2026-10-12
+## 1.0.1 - 2026-10-13
 
 - corrige el estado de cálculo fantasma cuando el motor R local no puede
   iniciarse;
