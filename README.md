@@ -22,11 +22,11 @@ la consola de R.
 La ejecución local y el primer adaptador remoto Slurm comparten un contrato de trabajo. Consulte docs/cluster-execution-design.md.
 La configuración inicial está disponible en la GUI; una guía sin conocimientos previos se encuentra en docs/cluster-user-guide.md.
 
-Versión actual: **1.0.0**.
+Versión actual: **1.0.1**.
 
 ## Descargar para Windows
 
-[Descargar Arii 1.0.0 para Windows de 64 bits](https://github.com/EXCI5ION/Arii/releases/download/v1.0.0/Arii-1.0.0-windows-x64.exe)
+[Descargar Arii 1.0.1 para Windows de 64 bits](https://github.com/EXCI5ION/Arii/releases/download/v1.0.1/Arii-1.0.1-windows-x64.exe)
 
 El instalador incluye Arii, sus workers estadísticos y un runtime privado de R
 con [`mixOmics`](https://mixomics.org/).
@@ -36,7 +36,7 @@ sus notas de lanzamiento.
 
 ## Instalación desde el código fuente
 
-Arii 1.0.0 requiere **Python 3.12** y la serie **R 4.5.x**. Las instalaciones desde código fuente
+Arii 1.0.1 requiere **Python 3.12** y la serie **R 4.5.x**. Las instalaciones desde código fuente
 usan [Bioconductor 3.22](https://bioconductor.org/news/bioc_3_22_release/),
 compatible con R 4.5. Consulte la preparación previa en
 [`docs/OS-Requirements.md`](docs/OS-Requirements.md).
@@ -44,7 +44,7 @@ compatible con R 4.5. Consulte la preparación previa en
 ### Windows — PowerShell
 
 ```powershell
-git clone --branch v1.0.0 --depth 1 https://github.com/EXCI5ION/Arii.git
+git clone --branch v1.0.1 --depth 1 https://github.com/EXCI5ION/Arii.git
 cd Arii
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -59,7 +59,7 @@ Si PowerShell bloquea la activación del entorno, ejecuta directamente `.\.venv\
 ### Linux
 
 ```bash
-git clone --branch v1.0.0 --depth 1 https://github.com/EXCI5ION/Arii.git
+git clone --branch v1.0.1 --depth 1 https://github.com/EXCI5ION/Arii.git
 cd Arii
 python3 -m venv .venv
 source .venv/bin/activate
@@ -72,7 +72,7 @@ arii-gui
 ### macOS
 
 ```bash
-git clone --branch v1.0.0 --depth 1 https://github.com/EXCI5ION/Arii.git
+git clone --branch v1.0.1 --depth 1 https://github.com/EXCI5ION/Arii.git
 cd Arii
 python3 -m venv .venv
 source .venv/bin/activate
@@ -96,7 +96,7 @@ ARII_VERSION="$ARII_VERSION" bash install-arii-server.sh
 
 ## Funcionalidades
 
-En su versión 1.0.0, Arii permite:
+En su versión 1.0.1, Arii permite:
 
 - Importar matrices CSV, TSV y TXT con muestras en filas o columnas
 - Trabajar con perfiles continuos y tablas de características discretas
@@ -137,8 +137,8 @@ Los metadatos de autoría y versión se encuentran en
 [`CITATION.cff`](CITATION.cff). GitHub puede generar desde ese archivo una
 referencia en formatos APA y BibTeX.
 
-Para citar exactamente Arii 1.0.0, utilice el DOI específico
-[`10.5281/zenodo.23167789`](https://doi.org/10.5281/zenodo.23167789). El DOI
+Para citar exactamente Arii 1.0.1, utilice el DOI específico
+[`10.5281/zenodo.23331773`](https://doi.org/10.5281/zenodo.23331773). El DOI
 conceptual [`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788)
 representa el proyecto Arii y dirige siempre a su versión más reciente.
 

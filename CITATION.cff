@@ -10,9 +10,9 @@ authors:
     given-names: "Gabriel"
     affiliation: "Departamento de Química del Litoral, CENUR Litoral Norte, Universidad de la República"
     email: "gabimiemp@gmail.com"
-version: "1.0.0"
-date-released: 2026-10-05
-doi: "10.5281/zenodo.23167789"
+version: "1.0.1"
+date-released: 2026-10-13
+doi: "10.5281/zenodo.23331773"
 license: GPL-3.0-or-later
 repository-code: "https://github.com/EXCI5ION/Arii"
 url: "https://github.com/EXCI5ION/Arii"
