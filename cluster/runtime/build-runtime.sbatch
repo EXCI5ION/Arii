@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ARII_ROOT="${ARII_ROOT:-$HOME/arii}"
-VERSION="${ARII_VERSION:-1.0.0}"
+VERSION="${ARII_VERSION:-1.0.1}"
 SOURCE_ENV="${ARII_SOURCE_ENV:-$ARII_ROOT/runtime/envs/arii-r-2026.08}"
 CONDA_PACK="${ARII_CONDA_PACK:-$ARII_ROOT/runtime/tools/conda-pack-0.8.1/bin/conda-pack}"
 SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
@@ -30,6 +30,7 @@ test -s "$PAYLOAD/health.sbatch"
 test -s "$PAYLOAD/health.R"
 test -s "$PAYLOAD/runtime_manifest.R"
 test -s "$PAYLOAD/explicit-lock.txt"
+test -s "$PAYLOAD/build-info.json"
 
 mkdir -p "$RELEASE_DIR" "$WORK_DIR/stage"
 ROOT_NAME="Arii-${VERSION}-cluster-runtime-linux-x86_64"
@@ -54,8 +55,10 @@ chmod 644 "$STAGED_RUNTIME/share/arii/explicit-lock.txt"
 install -m 644 "$PAYLOAD/LICENSE" "$STAGED_RUNTIME/share/arii/LICENSE"
 install -m 644 "$PAYLOAD/THIRD_PARTY_NOTICES.md" \
   "$STAGED_RUNTIME/share/arii/THIRD_PARTY_NOTICES.md"
+install -m 644 "$PAYLOAD/build-info.json" \
+  "$STAGED_RUNTIME/share/arii/build-info.json"
 
-"$SOURCE_ENV/bin/Rscript" "$PAYLOAD/runtime_manifest.R" \
+ARII_RELOCATABLE_MANIFEST=1 "$SOURCE_ENV/bin/Rscript" "$PAYLOAD/runtime_manifest.R" \
   "$STAGED_RUNTIME/share/arii/runtime-manifest.json"
 
 if grep -R -a -l -F "$HOME" "$STAGED_RUNTIME" > "$WORK_DIR/personal-paths.txt"; then

@@ -49,17 +49,13 @@ cuando el clúster no puede resolver la identidad del usuario en nodos
 secundarios. La cancelación segura y la reanudación continúan fuera del alcance
 de la versión 1.0.0.
 
-## CPU, memoria y GPU
+## CPU y memoria
 
 La validación PLS-DA y las permutaciones usan procesos independientes. En local
 se reservan al menos tres CPU lógicas y se aplica un límite adicional estimado a
 partir de la RAM disponible y del tamaño de la matriz. En Slurm, CPU y memoria son
 por trabajo y por nodo; las bibliotecas BLAS se limitan a un hilo para evitar
 sobresuscripción.
-
-Las GPU registradas por Slurm no se solicitan actualmente. `mixOmics` no ofrece
-un backend CUDA equivalente, por lo que usar otro algoritmo requeriría una etapa
-independiente de implementación y validación numérica.
 
 ## Trabajo posterior a la versión 1.0.0
 

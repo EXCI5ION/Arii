@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import ctypes
 import os
-import shutil
-import subprocess
 
 
 @dataclass(frozen=True)
@@ -12,7 +10,6 @@ class SystemResources:
     logical_cpus: int
     total_memory_mb: int | None
     available_memory_mb: int | None
-    gpu_names: tuple[str, ...]
 
 
 def _windows_memory() -> tuple[int | None, int | None]:
@@ -45,26 +42,12 @@ def _posix_memory() -> tuple[int | None, int | None]:
         return None, None
 
 
-def _nvidia_gpus() -> tuple[str, ...]:
-    executable = shutil.which("nvidia-smi")
-    if not executable:
-        return ()
-    completed = subprocess.run(
-        [executable, "--query-gpu=name", "--format=csv,noheader"],
-        capture_output=True, text=True, timeout=5, check=False,
-    )
-    if completed.returncode:
-        return ()
-    return tuple(line.strip() for line in completed.stdout.splitlines() if line.strip())
-
-
 def detect_system_resources() -> SystemResources:
     total, available = _windows_memory() if os.name == "nt" else _posix_memory()
     return SystemResources(
         logical_cpus=max(1, os.cpu_count() or 1),
         total_memory_mb=total,
         available_memory_mb=available,
-        gpu_names=_nvidia_gpus(),
     )
 
 

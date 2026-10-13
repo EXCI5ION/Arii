@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arii import __version__
 from arii.execution import (
     ClusterProfile, LocalRBackend, RJob, SlurmBackend, SlurmResources,
 )
@@ -253,10 +254,9 @@ class ExecutionProfileDialog(QDialog):
             f"{self.system_resources.total_memory_mb / 1024:.1f} GB RAM"
             if self.system_resources.total_memory_mb is not None else "RAM no detectada"
         )
-        gpu_text = ", ".join(self.system_resources.gpu_names) or "sin GPU NVIDIA compatible detectada"
         detected = QLabel(
             f"Equipo local: {self.system_resources.logical_cpus} CPU lógicas, "
-            f"{memory_text}; {gpu_text}. mixOmics utiliza CPU."
+            f"{memory_text}."
         )
         detected.setWordWrap(True)
         self.reserved_local_cpus = QSpinBox()
@@ -603,6 +603,7 @@ class MainWindow(QMainWindow):
         self.result: dict | None = None
         self.process: QProcess | None = None
         self._process_is_remote = False
+        self._active_process_name = ""
         self.system_resources = detect_system_resources()
         self.result_path: Path | None = None
         self.permutation_result_path: Path | None = None
@@ -1180,50 +1181,100 @@ class MainWindow(QMainWindow):
             if line.startswith("ARII_STATUS:"):
                 self.statusBar().showMessage(line.removeprefix("ARII_STATUS:"))
 
+    def _restore_execution_controls(self) -> None:
+        dataset_ready = (
+            self.dataset is not None and Path(self.dataset.path).is_file()
+        )
+        self.run_button.setEnabled(dataset_ready)
+        method = self.result.get("method") if self.result is not None else None
+        self.run_permutation_button.setEnabled(
+            dataset_ready and method in {"plsda", "orthogonalized_plsda"}
+        )
+        self.apply_model_button.setEnabled(self.result is not None)
+
+    def _discard_process(self, process: QProcess) -> None:
+        process.blockSignals(True)
+        process.deleteLater()
+        if self.process is process:
+            self.process = None
+        self._process_is_remote = False
+        self._active_process_name = ""
+
+    def _process_error(self, error: QProcess.ProcessError) -> None:
+        """Recover the GUI when QProcess cannot launch the selected backend."""
+
+        process = self.process
+        if process is None or error != QProcess.ProcessError.FailedToStart:
+            return
+        description = self._active_process_name or "cálculo"
+        target = "remoto" if self._process_is_remote else "local"
+        detail = process.errorString().strip()
+        program = process.program()
+        self._discard_process(process)
+        self._restore_execution_controls()
+        self.statusBar().showMessage(f"No se pudo iniciar el {description}")
+        QMessageBox.critical(
+            self,
+            "No se pudo iniciar el proceso",
+            f"Arii no pudo iniciar el {description} {target}.\n\n"
+            f"Programa: {program}\n"
+            f"Detalle: {detail or 'QProcess no proporcionó detalles.'}",
+        )
+
     def _start_r_job(
         self, *, worker: Path, job_path: Path, result_path: Path,
         dataset_path: Path, stamp: str, finished_callback, local_status: str,
         method: str,
     ) -> bool:
         target = self.execution_target.currentData()
-        self.process = QProcess(self)
-        self._process_is_remote = target == "slurm"
-        if target == "local":
-            command = LocalRBackend().command_for(RJob(worker, job_path, result_path))
-            self.process.setProgram(command.program)
-            self.process.setArguments(list(command.arguments))
-            raw_local = QSettings().value(ExecutionProfileDialog.LOCAL_KEY)
-            reserved = 3
-            if raw_local:
-                try:
-                    reserved = int(json.loads(raw_local).get("reserved_cpus", 3))
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    reserved = 3
-            current_resources = detect_system_resources()
-            workers = recommended_workers(
-                current_resources, reserved_cpus=reserved,
-                samples=self.dataset.samples if self.dataset else 0,
-                variables=self.dataset.spectral_points if self.dataset else 0,
-            )
-            environment = QProcessEnvironment.systemEnvironment()
-            r_environment = r_subprocess_environment(command.program)
-            for name in (
-                "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_MONETARY",
-                "LC_NUMERIC", "LC_TIME", "LANG",
-            ):
-                environment.remove(name)
-            for name in ("R_HOME", "R_LIBS_SITE", "R_LIBS_USER"):
-                if name in r_environment:
-                    environment.insert(name, r_environment[name])
-            environment.insert("ARII_PARALLEL_WORKERS", str(workers))
-            environment.insert("OMP_NUM_THREADS", "1")
-            environment.insert("OPENBLAS_NUM_THREADS", "1")
-            environment.insert("MKL_NUM_THREADS", "1")
-            self.process.setProcessEnvironment(environment)
-            suffix = f" ({workers} procesos; {reserved} CPU reservadas)" if method != "pca" else ""
-            self.statusBar().showMessage(local_status + suffix)
-        else:
-            try:
+        process = QProcess(self)
+        is_remote = target == "slurm"
+        process_name = (
+            "test de permutaciones"
+            if worker.name == "permutation_worker.R"
+            else "modelo"
+        )
+        try:
+            if target == "local":
+                command = LocalRBackend().command_for(
+                    RJob(worker, job_path, result_path)
+                )
+                process.setProgram(command.program)
+                process.setArguments(list(command.arguments))
+                raw_local = QSettings().value(ExecutionProfileDialog.LOCAL_KEY)
+                reserved = 3
+                if raw_local:
+                    try:
+                        reserved = int(json.loads(raw_local).get("reserved_cpus", 3))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        reserved = 3
+                current_resources = detect_system_resources()
+                workers = recommended_workers(
+                    current_resources, reserved_cpus=reserved,
+                    samples=self.dataset.samples if self.dataset else 0,
+                    variables=self.dataset.spectral_points if self.dataset else 0,
+                )
+                environment = QProcessEnvironment.systemEnvironment()
+                r_environment = r_subprocess_environment(command.program)
+                for name in (
+                    "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_MONETARY",
+                    "LC_NUMERIC", "LC_TIME", "LANG",
+                ):
+                    environment.remove(name)
+                for name in ("R_HOME", "R_LIBS_SITE", "R_LIBS_USER"):
+                    if name in r_environment:
+                        environment.insert(name, r_environment[name])
+                environment.insert("ARII_PARALLEL_WORKERS", str(workers))
+                environment.insert("OMP_NUM_THREADS", "1")
+                environment.insert("OPENBLAS_NUM_THREADS", "1")
+                environment.insert("MKL_NUM_THREADS", "1")
+                process.setProcessEnvironment(environment)
+                suffix = (
+                    f" ({workers} procesos; {reserved} CPU reservadas)"
+                    if method != "pca" else ""
+                )
+                self.statusBar().showMessage(local_status + suffix)
+            else:
                 profile, resources = self._saved_slurm_configuration()
                 request_path = job_path.with_suffix(".remote.json")
                 request_path.write_text(json.dumps({
@@ -1240,18 +1291,25 @@ class MainWindow(QMainWindow):
                     "result_path": str(result_path),
                     "remote_job_id": f"{worker.stem}-{stamp}",
                 }, ensure_ascii=False, indent=2), encoding="utf-8")
-            except Exception as exc:
-                self.process.deleteLater()
-                self.process = None
-                QMessageBox.warning(self, "Perfil Slurm", str(exc))
-                return False
-            program, arguments = launcher_command(request_path)
-            self.process.setProgram(program)
-            self.process.setArguments(arguments)
-            self.process.readyReadStandardOutput.connect(self._remote_progress)
-            self.statusBar().showMessage("Preparando la ejecución remota…")
-        self.process.finished.connect(finished_callback)
-        self.process.start()
+                program, arguments = launcher_command(request_path)
+                process.setProgram(program)
+                process.setArguments(arguments)
+                process.readyReadStandardOutput.connect(self._remote_progress)
+                self.statusBar().showMessage("Preparando la ejecución remota…")
+        except Exception as exc:
+            process.deleteLater()
+            title = "Perfil Slurm" if is_remote else "Motor R local"
+            QMessageBox.critical(self, title, str(exc))
+            self._restore_execution_controls()
+            self.statusBar().showMessage(f"No se pudo preparar el {process_name}")
+            return False
+
+        self.process = process
+        self._process_is_remote = is_remote
+        self._active_process_name = process_name
+        process.finished.connect(finished_callback)
+        process.errorOccurred.connect(self._process_error)
+        process.start()
         return True
 
     def _populate_samples(self) -> None:
@@ -1595,7 +1653,9 @@ class MainWindow(QMainWindow):
         stderr = bytes(self.process.readAllStandardError()).decode("utf-8", errors="replace")
         self.process.deleteLater()
         self.process = None
-        self.run_button.setEnabled(True)
+        self._process_is_remote = False
+        self._active_process_name = ""
+        self._restore_execution_controls()
         if exit_code != 0 or self.result_path is None or not self.result_path.exists():
             QMessageBox.critical(self, "Error en el modelo", stderr or "El motor R no produjo resultados.")
             self.statusBar().showMessage("El modelo falló")
@@ -2493,9 +2553,9 @@ class MainWindow(QMainWindow):
         )
         self.process.deleteLater()
         self.process = None
-        self.run_button.setEnabled(True)
-        self.run_permutation_button.setEnabled(True)
-        self.apply_model_button.setEnabled(self.result is not None)
+        self._process_is_remote = False
+        self._active_process_name = ""
+        self._restore_execution_controls()
         if (
             exit_code != 0
             or self.permutation_result_path is None
@@ -2817,7 +2877,7 @@ class MainWindow(QMainWindow):
         dataset_hash = fingerprint_file(dataset_path) if dataset_path.is_file() else None
         return {
             "schema_version": "1.0",
-            "application": {"name": "Arii", "version": "1.0.0"},
+            "application": {"name": "Arii", "version": __version__},
             "dataset": {
                 "path": self.dataset.path,
                 "sha256": dataset_hash,
@@ -3067,11 +3127,18 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.process is not None:
+            if self._process_is_remote:
+                explanation = (
+                    "Espere a que termine el trabajo remoto antes de cerrar Arii. "
+                    "La cancelación segura de trabajos Slurm se incorporará en un "
+                    "incremento posterior."
+                )
+            else:
+                explanation = (
+                    "Espere a que termine el cálculo local antes de cerrar Arii."
+                )
             QMessageBox.information(
-                self, "Cálculo en curso",
-                "Espere a que termine el cálculo antes de cerrar Arii. "
-                "La cancelación segura de trabajos Slurm se incorporará en el "
-                "siguiente incremento.",
+                self, "Cálculo en curso", explanation,
             )
             event.ignore()
             return
@@ -3172,7 +3239,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Arii")
     app.setOrganizationName("Arii")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(__version__)
     app.setWindowIcon(QIcon(str(asset_path("icons/arii-256.png"))))
     pg.setConfigOptions(antialias=True, background="#111827", foreground="#e5e7eb")
     window = MainWindow()

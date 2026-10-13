@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ARII_ROOT="${ARII_ROOT:-$HOME/arii}"
-VERSION="${ARII_VERSION:-1.0.0}"
+VERSION="${ARII_VERSION:-1.0.1}"
 RELEASE_DIR="${ARII_RELEASE_DIR:-$ARII_ROOT/releases}"
 ROOT_NAME="Arii-${VERSION}-cluster-runtime-linux-x86_64"
 ARCHIVE="$RELEASE_DIR/${ROOT_NAME}.tar.gz"
@@ -35,10 +35,13 @@ fi
 
 MANIFEST="$(tar -xOzf "$ARCHIVE" \
   "$ROOT_NAME/share/arii/runtime-manifest.json")"
+BUILD_INFO="$(tar -xOzf "$ARCHIVE" \
+  "$ROOT_NAME/share/arii/build-info.json")"
 if printf '%s' "$MANIFEST" | grep -E -i \
   "$DENY_REGEX|/home/|/Users/|[.]ssh"; then
   printf 'ERROR: el manifiesto contiene una ruta o identidad sensible\n' >&2
   exit 22
 fi
+printf '%s' "$BUILD_INFO" | grep -F '"version": "'"$VERSION"'"' >/dev/null
 
 printf 'ARII_RUNTIME_AUDIT_OK\n'

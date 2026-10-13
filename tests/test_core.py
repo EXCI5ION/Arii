@@ -350,12 +350,12 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertLess(result["randomization_t"], .05)
 
     def test_local_worker_recommendation_reserves_cpu_and_obeys_memory(self) -> None:
-        abundant = SystemResources(12, 16_000, 12_000, ())
+        abundant = SystemResources(12, 16_000, 12_000)
         self.assertEqual(
             recommended_workers(abundant, reserved_cpus=3, samples=23, variables=1000),
             9,
         )
-        constrained = SystemResources(12, 16_000, 2_000, ())
+        constrained = SystemResources(12, 16_000, 2_000)
         self.assertLessEqual(
             recommended_workers(constrained, reserved_cpus=3, samples=23, variables=20_000),
             2,

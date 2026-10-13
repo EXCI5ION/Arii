@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ARII_ROOT="${ARII_ROOT:-$HOME/arii}"
-VERSION="${ARII_VERSION:-1.0.0}"
+VERSION="${ARII_VERSION:-1.0.1}"
 RELEASE_DIR="${ARII_RELEASE_DIR:-$ARII_ROOT/releases}"
 VALIDATION_DIR="${ARII_VALIDATION_DIR:-$ARII_ROOT/runtime/validation}"
 ROOT_NAME="Arii-${VERSION}-cluster-runtime-linux-x86_64"

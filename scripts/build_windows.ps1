@@ -1,6 +1,7 @@
 param(
     [switch]$BundleR,
-    [switch]$Installer
+    [switch]$Installer,
+    [switch]$Release
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,21 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
 
 Push-Location $projectRoot
 try {
+    & $python "scripts\check_release_version.py"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Las versiones declaradas de Arii no coinciden."
+    }
+    $buildInfoArguments = @(
+        "scripts\write_build_info.py",
+        "--output", "build\arii-build-info.json"
+    )
+    if ($Release) {
+        $buildInfoArguments += "--release"
+    }
+    & $python @buildInfoArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "No se pudo registrar la procedencia de la compilación."
+    }
     & $python "scripts\build_icons.py"
     $originalPath = $env:PATH
     $originalPythonPath = $env:PYTHONPATH

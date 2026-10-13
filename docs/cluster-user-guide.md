@@ -132,11 +132,6 @@ La RAM se limita por nodo. Más memoria no acelera el álgebra si el trabajo ya
 cabe, pero evita paginación o fallos al ejecutar varios procesos. Arii recomienda
 reservar margen para el sistema y no multiplicar procesos por encima de la RAM.
 
-Una partición o una GPU disponible tampoco acelera automáticamente `mixOmics`:
-el motor actual ejecuta PLS-DA en CPU. Arii puede detectar y documentar GPU, pero
-no solicita GRES ni declara aceleración hasta disponer de un backend CUDA validado
-contra los resultados científicos de referencia.
-
 ## Seguridad y distribución
 
 El perfil se guarda por usuario en la configuración local de la aplicación y no

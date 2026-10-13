@@ -1,5 +1,5 @@
 #define MyAppName "Arii"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Gabriel Anderson"
 #define MyAppExeName "Arii.exe"
 

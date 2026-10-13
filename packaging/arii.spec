@@ -4,6 +4,11 @@ from PyInstaller.building.datastruct import TOC
 
 project_root = Path(SPECPATH).parent
 icon = project_root / "assets" / "icons" / "arii.ico"
+build_info = project_root / "build" / "arii-build-info.json"
+if not build_info.is_file():
+    raise FileNotFoundError(
+        "Falta build/arii-build-info.json; compile mediante scripts/build_windows.ps1"
+    )
 
 a = Analysis(
     [str(project_root / "src" / "arii" / "gui.py")],
@@ -12,6 +17,7 @@ a = Analysis(
     datas=[
         (str(project_root / "r"), "r"),
         (str(project_root / "assets" / "icons"), "assets/icons"),
+        (str(build_info), "."),
     ],
     hiddenimports=["keyring.backends.Windows", "keyring.backends.fail"],
     hookspath=[],

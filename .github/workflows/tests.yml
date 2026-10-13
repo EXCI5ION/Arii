@@ -30,7 +30,9 @@ jobs:
         env:
           ARII_SKIP_R_TESTS: "1"
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
+        run: |
+          python scripts/check_release_version.py
+          python -m pytest -q
 
   r-workers:
     name: Motor científico R (Ubuntu)

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-VERSION="1.0.0"
+VERSION="1.0.1"
 ROOT_NAME="Arii-${VERSION}-cluster-runtime-linux-x86_64"
 ARCHIVE_NAME="${ROOT_NAME}.tar.gz"
 CHECKSUM_NAME="SHA256SUMS-cluster-${VERSION}.txt"

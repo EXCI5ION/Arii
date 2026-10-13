@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${ARII_VERSION:-1.0.0}"
+VERSION="${ARII_VERSION:-1.0.1}"
 INSTALL_BASE="${ARII_INSTALL_BASE:-$HOME/arii/runtime/releases}"
 RELEASE_BASE_URL="${ARII_RELEASE_BASE_URL:-https://github.com/EXCI5ION/Arii/releases/download/v${VERSION}}"
 ROOT_NAME="Arii-${VERSION}-cluster-runtime-linux-x86_64"

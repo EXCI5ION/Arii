@@ -1,12 +1,34 @@
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.0.1",
     [Parameter(Mandatory = $true)]
     [string]$ExplicitLock,
-    [string]$OutputDirectory = "build\cluster-release-kit"
+    [string]$OutputDirectory = "build\cluster-release-kit",
+    [switch]$Release
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+$python = Join-Path $projectRoot ".venv-win\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    throw "No se encontró el entorno .venv-win."
+}
+& $python (Join-Path $projectRoot "scripts\check_release_version.py") `
+    --expected $Version
+if ($LASTEXITCODE -ne 0) {
+    throw "Las versiones declaradas de Arii no coinciden."
+}
+$buildInfoPath = Join-Path $projectRoot "build\arii-build-info.json"
+$buildInfoArguments = @(
+    (Join-Path $projectRoot "scripts\write_build_info.py"),
+    "--output", $buildInfoPath
+)
+if ($Release) {
+    $buildInfoArguments += "--release"
+}
+& $python @buildInfoArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "No se pudo registrar la procedencia del paquete de clúster."
+}
 $lockPath = (Resolve-Path -LiteralPath $ExplicitLock).Path
 $stageRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory))
 $allowedRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot "build"))
@@ -55,6 +77,7 @@ foreach ($entry in $copies.GetEnumerator()) {
         )
     }
 }
+Copy-Item -LiteralPath $buildInfoPath -Destination (Join-Path $payload "build-info.json")
 Copy-Item -LiteralPath $lockPath -Destination (Join-Path $payload "explicit-lock.txt")
 
 @'

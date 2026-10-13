@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(1, 0, 1, 0),
+    prodvers=(1, 0, 1, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Gabriel Anderson'),
           StringStruct('FileDescription', 'Arii chemometrics workbench'),
-          StringStruct('FileVersion', '1.0.0'),
+          StringStruct('FileVersion', '1.0.1'),
           StringStruct('InternalName', 'Arii'),
           StringStruct('LegalCopyright', 'Copyright (C) 2026 Gabriel Anderson'),
           StringStruct('OriginalFilename', 'Arii.exe'),
           StringStruct('ProductName', 'Arii'),
-          StringStruct('ProductVersion', '1.0.0')
+          StringStruct('ProductVersion', '1.0.1')
         ]
       )
     ]),

@@ -4,6 +4,7 @@ if (length(args) != 1L) {
 }
 
 roots <- c("mixOmics", "jsonlite")
+relocatable <- identical(Sys.getenv("ARII_RELOCATABLE_MANIFEST"), "1")
 installed <- installed.packages()
 missing <- setdiff(roots, rownames(installed))
 if (length(missing) > 0L) {
@@ -22,9 +23,11 @@ records <- lapply(packages, function(package) {
     version = as.character(description$Version),
     license = as.character(description$License),
     priority = if (is.null(description$Priority)) NA_character_ else as.character(description$Priority),
-    # Record the location inside the relocatable runtime, never the build
-    # machine's absolute installation path.
-    path = file.path("lib", "R", "library", package)
+    path = if (relocatable) {
+      file.path("lib", "R", "library", package)
+    } else {
+      normalizePath(find.package(package), winslash = "/", mustWork = TRUE)
+    }
   )
 })
 
@@ -33,7 +36,11 @@ manifest <- list(
   generated_at = format(Sys.time(), tz = "UTC", usetz = TRUE),
   platform = R.version$platform,
   r_version = R.version.string,
-  r_home = file.path("lib", "R"),
+  r_home = if (relocatable) {
+    file.path("lib", "R")
+  } else {
+    normalizePath(R.home(), winslash = "/", mustWork = TRUE)
+  },
   root_packages = roots,
   packages = records
 )

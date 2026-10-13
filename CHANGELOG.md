@@ -1,5 +1,17 @@
 # Historial de cambios
 
+## 1.0.1 - 2026-10-12
+
+- corrige el estado de cálculo fantasma cuando el motor R local no puede
+  iniciarse;
+- muestra el error de arranque real y restablece los controles de la interfaz;
+- diferencia correctamente los cálculos locales de los trabajos Slurm al
+  cerrar Arii;
+- separa correctamente las rutas absolutas usadas al empaquetar R en Windows
+  de las rutas relocatables necesarias en el runtime Linux;
+- elimina una detección de hardware ajena al motor científico, que utiliza
+  exclusivamente CPU y memoria.
+
 ## 1.0.0 - 2026-10-04
 
 Primera edición pública de Arii:
