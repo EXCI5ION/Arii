@@ -177,7 +177,11 @@ class ExecutionProfileTests(unittest.TestCase):
 
     def test_local_backend_builds_worker_contract(self) -> None:
         job = RJob(Path("worker.R"), Path("job.json"), Path("result.json"))
-        command = LocalRBackend().command_for(job)
+        with patch(
+            "arii.execution.find_rscript",
+            return_value=Path("/opt/arii-runtime/bin/Rscript"),
+        ):
+            command = LocalRBackend().command_for(job)
         self.assertTrue(command.program.lower().endswith(("rscript", "rscript.exe")))
         self.assertEqual(command.arguments, ("worker.R", "job.json", "result.json"))
 
