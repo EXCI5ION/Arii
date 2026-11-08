@@ -40,6 +40,18 @@ class LinuxInstallerPythonTests(unittest.TestCase):
                 ):
                     installer.verify_python()
 
+    def test_ci_installs_the_required_linux_qt_libraries(self) -> None:
+        workflow = Path(".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("if: runner.os == 'Linux'", workflow)
+        for package in (
+            "libegl1",
+            "libgl1",
+            "libdbus-1-3",
+            "libxcb-cursor0",
+            "libxkbcommon-x11-0",
+        ):
+            self.assertIn(package, workflow)
+
 
 class LinuxInstallerMetadataTests(unittest.TestCase):
     def test_parses_os_release(self) -> None:

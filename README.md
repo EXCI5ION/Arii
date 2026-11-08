@@ -16,8 +16,7 @@
 </p>
 
 Arii es una aplicación de código abierto para el análisis quimiométrico de matrices ómicas. Proporciona una interfaz gráfica para
-PCA, PLS-DA y OPLS-DA sobre el paquete `mixOmics` sin exigir que el usuario trabaje desde
-la consola de R.
+PCA, PLS-DA y OPLS-DA sobre el paquete `mixOmics`.
 
 La ejecución local y el primer adaptador remoto Slurm comparten un contrato de trabajo. Consulte docs/cluster-execution-design.md.
 La configuración inicial está disponible en la GUI; una guía sin conocimientos previos se encuentra en docs/cluster-user-guide.md.
@@ -41,11 +40,9 @@ usan [Bioconductor 3.22](https://bioconductor.org/news/bioc_3_22_release/),
 compatible con R 4.5. Consulte la preparación previa en
 [`docs/OS-Requirements.md`](docs/OS-Requirements.md).
 
-### Linux — instalación global automatizada
+### Linux — instalación global
 
-En Debian, Ubuntu y derivados Python 3.12 o 3.13, el instalador
-selecciona la versión estable más reciente y prepara el entorno Python, el
-runtime privado de R, los comandos globales, los iconos y la entrada del menú:
+En Debian, Ubuntu y derivados, el instalador selecciona la versión estable más reciente y prepara los comandos globales:
 
 ```bash
 git clone --depth 1 https://github.com/EXCI5ION/Arii.git
@@ -63,9 +60,6 @@ sudo arii-update         # buscar e instalar una versión estable nueva
 sudo arii-update --repair
 sudo arii-update --uninstall
 ```
-
-La desinstalación elimina la aplicación y sus runtimes globales, pero no los
-datasets ni los proyectos guardados por los usuarios.
 
 ### macOS
 
