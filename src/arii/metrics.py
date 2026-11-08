@@ -27,9 +27,26 @@ def mean_external_scores(
     """Average out-of-fold decision values for each sample across iterations."""
     accumulated: dict[str, tuple[str, list[np.ndarray]]] = {}
     for fold in repetitions:
+        sample_names = np.atleast_1d(fold["validation_samples"]).astype(str).tolist()
+        truths = np.atleast_1d(fold["truth"]).astype(str).tolist()
         values = np.asarray(fold["decision_values"], dtype=float)
+        if values.ndim == 2 and len(sample_names) == 1:
+            values = values[np.newaxis, :, :]
+        if values.ndim != 3:
+            raise ValueError(
+                "Los valores de decisión CV deben tener dimensiones "
+                "muestras × clases × componentes"
+            )
+        if len(sample_names) != len(truths) or values.shape[0] != len(sample_names):
+            raise ValueError(
+                "Las muestras, clases y valores de decisión CV no coinciden"
+            )
+        if not 0 <= component < values.shape[2]:
+            raise ValueError(
+                f"La componente CV {component + 1} no está disponible"
+            )
         for row, (sample_name, truth) in enumerate(
-            zip(fold["validation_samples"], fold["truth"], strict=True)
+            zip(sample_names, truths, strict=True)
         ):
             score = np.asarray(values[row, :, component], dtype=float)
             if sample_name not in accumulated:

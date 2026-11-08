@@ -852,6 +852,25 @@ class ClassificationMetricTests(unittest.TestCase):
         self.assertEqual(truths, ["A", "B"])
         np.testing.assert_allclose(scores, [[0.9, 0.1], [0.2, 0.8]])
 
+    def test_external_scores_accept_leave_one_out_singletons(self) -> None:
+        repetitions = [
+            {
+                "validation_samples": "a",
+                "truth": "A",
+                "decision_values": [[[0.8, 0.9], [0.2, 0.1]]],
+            },
+            {
+                "validation_samples": "b",
+                "truth": "B",
+                "decision_values": [[[0.3, 0.2], [0.7, 0.8]]],
+            },
+        ]
+        names, truths, scores = mean_external_scores(repetitions, 1)
+
+        self.assertEqual(names, ["a", "b"])
+        self.assertEqual(truths, ["A", "B"])
+        np.testing.assert_allclose(scores, [[0.9, 0.1], [0.2, 0.8]])
+
     def test_threshold_curve_finds_separating_cutoff(self) -> None:
         curve = sensitivity_specificity_curve(
             [False, False, True, True], [0.1, 0.2, 0.8, 0.9]
@@ -911,6 +930,19 @@ class MetadataTests(unittest.TestCase):
             result = import_metadata(path, ["known"])
         self.assertEqual(result.values["known"]["biological_id"], "I1")
         self.assertEqual(result.unknown_samples, ("unknown",))
+
+    def test_import_accepts_condition_as_individual_visual_vector(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.csv"
+            path.write_text(
+                "muestra,clase,condicion\n"
+                "m1,Agata,Sana\n"
+                "m2,Agata,Infectada\n",
+                encoding="utf-8",
+            )
+            result = import_metadata(path, ["m1", "m2"])
+
+        self.assertEqual(result.values["m1"]["biological_id"], "Sana")
 
 
 class ExportResultsTests(unittest.TestCase):

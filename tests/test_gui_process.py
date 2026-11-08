@@ -9,9 +9,10 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QProcess
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTableWidgetItem
+import pyqtgraph as pg
 
-from arii.gui import MainWindow
+from arii.gui import MainWindow, TABLE_COLUMNS
 
 
 class ProcessLifecycleTests(unittest.TestCase):
@@ -70,6 +71,156 @@ class ProcessLifecycleTests(unittest.TestCase):
         message = critical.call_args.args[2]
         self.assertIn("modelo local", message)
         self.assertIn("Rscript-que-no-existe.exe", message)
+
+
+class IndividualScoreBorderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self.window = MainWindow()
+        rows = (
+            ("m1", "Control", "Sana"),
+            ("m2", "Control", "Infectada"),
+            ("m3", "Tratada", "Sana"),
+            ("m4", "Tratada", "Infectada"),
+        )
+        self.window.sample_table.setRowCount(len(rows))
+        for row, (sample, primary, individual) in enumerate(rows):
+            for column, value in (
+                (TABLE_COLUMNS["included"], ""),
+                (TABLE_COLUMNS["sample_name"], sample),
+                (TABLE_COLUMNS["class"], primary),
+                (TABLE_COLUMNS["biological_id"], individual),
+            ):
+                self.window.sample_table.setItem(row, column, QTableWidgetItem(value))
+        self.window.result = {
+            "scores": [[-2, -1], [-1, 1], [1, -1], [2, 1]],
+            "classes": ["Control", "Control", "Tratada", "Tratada"],
+            "sample_names": ["m1", "m2", "m3", "m4"],
+            "explained_variance": [0.6, 0.25],
+            "component_names": ["PC1", "PC2"],
+        }
+        self.window.x_component.addItems(["PC1", "PC2"])
+        self.window.y_component.addItems(["PC1", "PC2"])
+        self.window.y_component.setCurrentIndex(1)
+        self.window.hotelling_level.setCurrentIndex(0)
+
+    def tearDown(self) -> None:
+        self.window._dirty = False
+        self.window.close()
+
+    def _score_scatters(self) -> list[pg.ScatterPlotItem]:
+        return [
+            item for item in self.window.score_plot.items()
+            if isinstance(item, pg.ScatterPlotItem)
+        ]
+
+    def test_individual_splits_points_and_adds_two_legend_dimensions(self) -> None:
+        self.window.update_score_plot()
+
+        self.assertEqual(len(self._score_scatters()), 4)
+        self.assertEqual(len(self.window.score_legend.items), 4)
+        self.assertEqual(set(self.window.individual_colors), {"Sana", "Infectada"})
+        for scatter in self._score_scatters():
+            self.assertAlmostEqual(scatter.opts["pen"].widthF(), 1.5)
+        legend_labels = [
+            label.text for _sample, label in self.window.score_legend.items
+        ]
+        self.assertEqual(
+            legend_labels,
+            ["Control", "Tratada", "Sana", "Infectada"],
+        )
+        self.assertFalse(any("Relleno" in label for label in legend_labels))
+        self.assertFalse(any("Borde" in label for label in legend_labels))
+
+    def test_individual_border_can_be_hidden_without_changing_primary_classes(self) -> None:
+        self.window.show_individual_border.setChecked(False)
+
+        self.assertEqual(len(self._score_scatters()), 2)
+        self.assertEqual(len(self.window.score_legend.items), 2)
+
+
+class DatasetOpeningTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_dataset_opens_directly_with_automatic_interpretation(self) -> None:
+        window = MainWindow()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "spectra.csv"
+                path.write_text(
+                    "ppm,m1,m2,m3\n"
+                    "1.0,1,2,3\n"
+                    "2.0,2,3,4\n"
+                    "3.0,3,4,5\n"
+                    "4.0,4,5,6\n",
+                    encoding="utf-8",
+                )
+                with patch(
+                    "arii.gui.QFileDialog.getOpenFileName",
+                    return_value=(str(path), "Datos (*.csv)"),
+                ):
+                    window.open_dataset()
+
+            self.assertIsNotNone(window.dataset)
+            self.assertEqual(window.dataset.orientation, "variables_by_samples")
+            self.assertEqual(window.dataset.representation, "continuous_profile")
+            self.assertEqual(window.dataset.modality, "1H-NMR")
+            self.assertTrue(window.run_button.isEnabled())
+            self.assertEqual(window.sample_table.rowCount(), 3)
+        finally:
+            window._dirty = False
+            window.close()
+
+    def test_stocsy_uses_the_complete_loaded_dataset(self) -> None:
+        window = MainWindow()
+        window.dataset = object()
+        window.result = {"sample_names": ["model-sample-only"]}
+        matrix = [[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]]
+        axis = [1.0, 2.0]
+        stocsy_result = object()
+        try:
+            with patch(
+                "arii.gui.load_numeric_matrix",
+                return_value=(matrix, axis, ("all-1", "all-2", "all-3")),
+            ) as load_matrix, patch(
+                "arii.gui.compute_stocsy", return_value=stocsy_result
+            ) as compute, patch("arii.gui.StocsyDialog") as dialog:
+                window._open_stocsy_dialog(1.2)
+
+            load_matrix.assert_called_once_with(window.dataset)
+            compute.assert_called_once_with(matrix, axis, 1.2)
+            dialog.assert_called_once_with(
+                stocsy_result,
+                plot_theme=window._plot_theme,
+                parent=window,
+            )
+            dialog.return_value.exec.assert_called_once()
+        finally:
+            window._dirty = False
+            window.close()
+
+    def test_stocsy_crosshair_uses_the_configured_style(self) -> None:
+        window = MainWindow()
+        try:
+            window._install_stocsy_crosshair()
+
+            for line in (
+                window._stocsy_crosshair_x,
+                window._stocsy_crosshair_y,
+            ):
+                self.assertIsNotNone(line)
+                pen = line.pen
+                self.assertEqual(pen.color().name().upper(), "#AA0000")
+                self.assertAlmostEqual(pen.color().alphaF(), 0.65, places=2)
+                self.assertAlmostEqual(pen.widthF(), 1.5)
+        finally:
+            window._dirty = False
+            window.close()
 
 
 if __name__ == "__main__":

@@ -10,7 +10,9 @@ from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt
-from PySide6.QtGui import QAction, QActionGroup, QColor, QCloseEvent, QIcon, QKeySequence
+from PySide6.QtGui import (
+    QAction, QActionGroup, QColor, QCloseEvent, QIcon, QKeySequence, QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -51,6 +53,8 @@ from arii.metrics import binary_roc, mean_external_scores, sensitivity_specifici
 from arii.omics_matrix import OmicsMatrixSummary, inspect_omics_matrix
 from arii.styles import ClassStyle
 from arii.ssh_access import provision_managed_key
+from arii.stocsy import compute_stocsy, load_numeric_matrix
+from arii.stocsy_view import StocsyDialog
 from arii.system_resources import detect_system_resources, recommended_workers
 from arii.resources import asset_path, worker_path
 from arii.r_bridge import r_subprocess_environment
@@ -96,14 +100,59 @@ class LoadingValueViewBox(pg.ViewBox):
     """ViewBox with axis-specific navigation for dense spectral curves."""
 
     def wheelEvent(self, event, axis=None) -> None:
-        # Over the plot, the wheel changes only the vertical scale. AxisItem
-        # supplies its own axis explicitly and remains free to control it.
-        super().wheelEvent(event, axis=1 if axis is None else axis)
+        # AxisItem supplies its own axis explicitly and remains free to
+        # control it. Over the plot: wheel zooms Y, Ctrl+wheel zooms X,
+        # Shift+wheel pans X, and Alt+wheel pans Y.
+        if axis is not None:
+            super().wheelEvent(event, axis=axis)
+            return
+        modifiers = (
+            event.modifiers()
+            if hasattr(event, "modifiers")
+            else Qt.KeyboardModifier.NoModifier
+        )
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            super().wheelEvent(event, axis=0)
+            return
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            delta = self._wheel_delta(event)
+            if delta:
+                x_min, x_max = self.viewRange()[0]
+                shift = (delta / 120.0) * (x_max - x_min) * 0.1
+                self.translateBy(x=shift, y=0.0)
+            event.accept()
+            return
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            delta = self._wheel_delta(event)
+            if delta:
+                y_min, y_max = self.viewRange()[1]
+                shift = (delta / 120.0) * (y_max - y_min) * 0.1
+                self.translateBy(x=0.0, y=shift)
+            event.accept()
+            return
+        super().wheelEvent(event, axis=1)
+
+    @staticmethod
+    def _wheel_delta(event) -> float:
+        if hasattr(event, "angleDelta"):
+            angle_delta = event.angleDelta()
+            if hasattr(angle_delta, "y") and angle_delta.y():
+                return float(angle_delta.y())
+            if hasattr(angle_delta, "x") and angle_delta.x():
+                return float(angle_delta.x())
+        if hasattr(event, "delta"):
+            return float(event.delta())
+        return 0.0
 
     def mouseDragEvent(self, event, axis=None) -> None:
-        # Plot-area drags pan (left) or zoom (right) only along ppm. Dragging
-        # directly over the Y axis arrives with axis=1 and therefore moves Y.
-        super().mouseDragEvent(event, axis=0 if axis is None else axis)
+        # Plot-area dragging stays disabled because clicks are reserved for a
+        # STOCSY pivot. Dragging directly over an axis keeps PyQtGraph's
+        # axis-specific navigation.
+        if axis is not None:
+            super().mouseDragEvent(event, axis=axis)
+            return
+        if hasattr(event, "accept"):
+            event.accept()
 
 
 class MetadataTableWidget(QTableWidget):
@@ -225,6 +274,64 @@ class ClassStyleDialog(QDialog):
         )
 
     def _accept_styles(self) -> None:
+        self._save_active()
+        self.accept()
+
+
+class IndividualColorDialog(QDialog):
+    """Edit score-border colours for the condition/individual vector."""
+
+    def __init__(self, colors: dict[str, str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Colores de condición / individuo")
+        self.colors = dict(colors)
+        self._active_factor: str | None = None
+        self._color = "#2563eb"
+
+        self.factor_combo = QComboBox()
+        self.factor_combo.addItems(self.colors)
+        self.color_button = QPushButton()
+        self.color_button.clicked.connect(self._choose_color)
+
+        form = QFormLayout()
+        form.addRow("Condición / individuo", self.factor_combo)
+        form.addRow("Color del borde", self.color_button)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._accept_colors)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        self.factor_combo.currentTextChanged.connect(self._switch_factor)
+        if self.factor_combo.count():
+            self._switch_factor(self.factor_combo.currentText())
+
+    def _save_active(self) -> None:
+        if self._active_factor is not None:
+            self.colors[self._active_factor] = self._color
+
+    def _switch_factor(self, factor: str) -> None:
+        self._save_active()
+        self._active_factor = factor
+        self._color = self.colors[factor]
+        self._update_color_button()
+
+    def _choose_color(self) -> None:
+        color = QColorDialog.getColor(
+            QColor(self._color), self, "Color de condición / individuo"
+        )
+        if color.isValid():
+            self._color = color.name()
+            self._update_color_button()
+
+    def _update_color_button(self) -> None:
+        self.color_button.setText(self._color)
+        self.color_button.setStyleSheet(
+            f"background-color: {self._color}; color: white; padding: 5px;"
+        )
+
+    def _accept_colors(self) -> None:
         self._save_active()
         self.accept()
 
@@ -504,96 +611,6 @@ class ExecutionProfileDialog(QDialog):
             )
 
 
-class OmicsImportDialog(QDialog):
-    """Confirm the interpretation of a delimited omics matrix."""
-
-    def __init__(self, detected: OmicsMatrixSummary, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.detected = detected
-        self.setWindowTitle("Interpretar matriz ómica")
-        self.setMinimumWidth(520)
-
-        self.orientation = QComboBox()
-        self.orientation.addItem("Variables × muestras", "variables_by_samples")
-        self.orientation.addItem("Muestras × variables", "samples_by_variables")
-        self.orientation.setCurrentIndex(
-            max(0, self.orientation.findData(detected.proposed_orientation))
-        )
-        self.representation = QComboBox()
-        self.representation.addItem("Perfil continuo", "continuous_profile")
-        self.representation.addItem("Tabla de características", "feature_table")
-        self.representation.setCurrentIndex(
-            max(0, self.representation.findData(detected.representation))
-        )
-        self.modality = QComboBox()
-        self.modality.setEditable(True)
-        for name in (
-            "1H-NMR", "LC-MS / HPLC-MS", "GC-MS", "HPLC / DAD",
-            "Metabolómica genérica", "Proteómica", "Transcriptómica",
-            "Genómica", "Matriz ómica genérica",
-        ):
-            self.modality.addItem(name)
-        modality_index = self.modality.findText(detected.modality)
-        if modality_index >= 0:
-            self.modality.setCurrentIndex(modality_index)
-        else:
-            self.modality.setEditText(detected.modality)
-        self.axis_label = QLineEdit(detected.axis_label)
-
-        self.matrix_summary = QLabel()
-        self.matrix_summary.setWordWrap(True)
-        self.orientation.currentIndexChanged.connect(self._update_summary)
-        self._update_summary()
-
-        explanation = QLabel(
-            "Arii propone una interpretación a partir de la forma y los "
-            "identificadores, pero debe confirmarla: plataformas distintas pueden "
-            "producir matrices numéricamente indistinguibles."
-        )
-        explanation.setWordWrap(True)
-        form = QFormLayout()
-        form.addRow("Orientación", self.orientation)
-        form.addRow("Representación", self.representation)
-        form.addRow("Modalidad", self.modality)
-        form.addRow("Etiqueta del eje/variables", self.axis_label)
-        form.addRow("Resultado", self.matrix_summary)
-
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        if detected.missing_values:
-            missing = QLabel(
-                f"El archivo contiene {detected.missing_values} valores ausentes o no "
-                "finitos. La imputación aún no está implementada; corrija la matriz "
-                "antes de modelar."
-            )
-            missing.setWordWrap(True)
-            missing.setStyleSheet("color: #dc2626;")
-            self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
-        else:
-            missing = None
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(explanation)
-        layout.addLayout(form)
-        if missing is not None:
-            layout.addWidget(missing)
-        layout.addWidget(self.buttons)
-
-    def _update_summary(self, _index: int | None = None) -> None:
-        if self.orientation.currentData() == "variables_by_samples":
-            samples, features = self.detected.columns - 1, self.detected.rows
-        else:
-            samples, features = self.detected.rows, self.detected.columns - 1
-        self.matrix_summary.setText(
-            f"{samples} muestras × {features:,} variables · "
-            f"confianza de detección {self.detected.orientation_confidence}"
-        )
-
-
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -608,6 +625,9 @@ class MainWindow(QMainWindow):
         self.result_path: Path | None = None
         self.permutation_result_path: Path | None = None
         self.class_styles: dict[str, ClassStyle] = {}
+        self.individual_colors: dict[str, str] = {}
+        self._stocsy_crosshair_x: pg.InfiniteLine | None = None
+        self._stocsy_crosshair_y: pg.InfiniteLine | None = None
         self.project_path: Path | None = None
         self._dirty = False
         self._loading = False
@@ -663,19 +683,25 @@ class MainWindow(QMainWindow):
 
         self.sample_table = MetadataTableWidget(0, 4)
         self.sample_table.setHorizontalHeaderLabels(
-            ["Incluir", "Muestra", "Clase", "Individuo"]
+            ["Incluir", "Muestra", "Clase", "Condición / individuo"]
         )
         self.sample_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.sample_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.sample_table.horizontalHeader().setStretchLastSection(True)
         self.sample_table.setColumnWidth(0, 56)
         self.sample_table.setColumnWidth(1, 245)
-        self.sample_table.itemChanged.connect(self._mark_dirty)
+        self.sample_table.itemChanged.connect(self._sample_metadata_changed)
 
         assign_button = QPushButton("Asignar clase a selección")
         assign_button.clicked.connect(self.assign_class)
+        assign_individual_button = QPushButton(
+            "Asignar condición / individuo a selección"
+        )
+        assign_individual_button.clicked.connect(self.assign_individual)
         style_button = QPushButton("Estilos de clases…")
         style_button.clicked.connect(self.edit_class_styles)
+        individual_style_button = QPushButton("Colores de condición / individuo…")
+        individual_style_button.clicked.connect(self.edit_individual_colors)
         self.analysis_method = QComboBox()
         self.analysis_method.addItem("PCA", "pca")
         self.analysis_method.addItem("PLS-DA", "plsda")
@@ -759,7 +785,9 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(QLabel("Muestras y clases"))
         left_layout.addWidget(self.sample_table, 1)
         left_layout.addWidget(assign_button)
+        left_layout.addWidget(assign_individual_button)
         left_layout.addWidget(style_button)
+        left_layout.addWidget(individual_style_button)
         left_layout.addLayout(controls)
         left_layout.addWidget(self.run_button)
 
@@ -774,8 +802,10 @@ class MainWindow(QMainWindow):
         self.hotelling_level.addItem("T² Hotelling 95 %", "0.95")
         self.hotelling_level.addItem("T² Hotelling 99 %", "0.99")
         self.hotelling_level.setCurrentIndex(1)
-        self.show_legend = QCheckBox("Mostrar leyenda de clases")
+        self.show_legend = QCheckBox("Mostrar leyendas")
         self.show_legend.setChecked(True)
+        self.show_individual_border = QCheckBox("Borde por condición / individuo")
+        self.show_individual_border.setChecked(True)
         self.x_component.currentIndexChanged.connect(self.update_score_plot)
         self.y_component.currentIndexChanged.connect(self.update_score_plot)
         self.x_component.currentIndexChanged.connect(self._settings_changed)
@@ -784,6 +814,8 @@ class MainWindow(QMainWindow):
         self.hotelling_level.currentIndexChanged.connect(self._settings_changed)
         self.show_legend.toggled.connect(self.update_score_plot)
         self.show_legend.toggled.connect(self._settings_changed)
+        self.show_individual_border.toggled.connect(self.update_score_plot)
+        self.show_individual_border.toggled.connect(self._settings_changed)
         selectors = QHBoxLayout()
         selectors.addWidget(QLabel("Eje X"))
         selectors.addWidget(self.x_component)
@@ -791,6 +823,7 @@ class MainWindow(QMainWindow):
         selectors.addWidget(self.y_component)
         selectors.addWidget(QLabel("Confianza"))
         selectors.addWidget(self.hotelling_level)
+        selectors.addWidget(self.show_individual_border)
         selectors.addWidget(self.show_legend)
         selectors.addStretch(1)
 
@@ -989,6 +1022,13 @@ class MainWindow(QMainWindow):
         self.loading_value_plot.setLabel("bottom", "Corrimiento químico", units="ppm")
         self.loading_value_plot.setLabel("left", "Valor de carga reescalado")
         self.loading_value_plot.invertX(True)
+        self.loading_value_plot.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.loading_value_plot.scene().sigMouseMoved.connect(
+            self._stocsy_mouse_moved
+        )
+        self.loading_value_plot.scene().sigMouseClicked.connect(
+            self._stocsy_mouse_clicked
+        )
         self.loading_value_component = QComboBox()
         self.loading_value_component.currentIndexChanged.connect(
             self.update_loading_value_plot
@@ -999,11 +1039,24 @@ class MainWindow(QMainWindow):
         loading_value_controls = QHBoxLayout()
         loading_value_controls.addWidget(QLabel("Componente"))
         loading_value_controls.addWidget(self.loading_value_component)
+        self.stocsy_mode_button = QPushButton("S-TOCSY (S)")
+        self.stocsy_mode_button.setCheckable(True)
+        self.stocsy_mode_button.setToolTip(
+            "Active el crosshair y haga clic sobre el ppm conductor"
+        )
+        self.stocsy_mode_button.toggled.connect(self._toggle_stocsy_mode)
+        loading_value_controls.addWidget(self.stocsy_mode_button)
         loading_value_controls.addStretch(1)
+        self.stocsy_shortcut = QShortcut(QKeySequence("S"), self.loading_value_plot)
+        self.stocsy_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.stocsy_shortcut.activated.connect(self._toggle_stocsy_shortcut)
         loading_value_layout.addLayout(loading_value_controls)
         self.loading_value_explanation = QLabel(
             "Altura: √(desviación estándar) × loading con escalado Pareto; "
-            "color: loading original."
+            "color: loading original. Navegación: rueda = zoom vertical; "
+            "Ctrl + rueda = zoom horizontal; Shift/Alt + rueda = desplazamiento horizontal; "
+            "arrastre sobre los ejes = movimiento del eje. "
+            "S = seleccionar pivote S-TOCSY."
         )
         self.loading_value_explanation.setWordWrap(True)
         loading_value_layout.addWidget(self.loading_value_explanation)
@@ -1103,20 +1156,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self._loading = True
-            detected = inspect_omics_matrix(path)
-            QApplication.restoreOverrideCursor()
-            dialog = OmicsImportDialog(detected, self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            self.dataset = inspect_omics_matrix(
-                path,
-                detected.delimiter,
-                orientation=dialog.orientation.currentData(),
-                representation=dialog.representation.currentData(),
-                modality=dialog.modality.currentText(),
-                axis_label=dialog.axis_label.text(),
-            )
+            self.dataset = inspect_omics_matrix(path)
             suggested_scaling = (
                 "pareto"
                 if self.dataset.modality == "1H-NMR"
@@ -1129,6 +1169,7 @@ class MainWindow(QMainWindow):
             self.result = None
             self.export_action.setEnabled(False)
             self.class_styles.clear()
+            self.individual_colors.clear()
             self._populate_samples()
             self.summary.setText(
                 f"<b>{Path(path).name}</b><br><br>"
@@ -1344,6 +1385,30 @@ class MainWindow(QMainWindow):
             for row in rows:
                 self.sample_table.item(row, 2).setText(value.strip())
 
+    def assign_individual(self) -> None:
+        cells = self.sample_table.selectedIndexes()
+        rows = sorted({cell.row() for cell in cells})
+        if not rows:
+            QMessageBox.information(
+                self, "Asignar condición / individuo", "Seleccione una o más filas."
+            )
+            return
+        current = self.sample_table.item(
+            rows[0], TABLE_COLUMNS["biological_id"]
+        ).text()
+        from PySide6.QtWidgets import QInputDialog
+        value, accepted = QInputDialog.getText(
+            self,
+            "Asignar condición / individuo",
+            "Nombre:",
+            text=current,
+        )
+        if accepted:
+            for row in rows:
+                self.sample_table.item(
+                    row, TABLE_COLUMNS["biological_id"]
+                ).setText(value.strip())
+
     def _method_changed(self, _index: int | None = None) -> None:
         method = self.analysis_method.currentData()
         is_supervised = method in {"plsda", "orthogonalized_plsda"}
@@ -1415,7 +1480,7 @@ class MainWindow(QMainWindow):
                 f"{self.monte_carlo_iterations.value()} submodelos independientes"
             )
         elif strategy == "leave_one_out":
-            self.validation_summary.setText("Una unidad biológica externa por submodelo")
+            self.validation_summary.setText("Una muestra externa por submodelo")
         else:
             splits = self.supervised_splits.value()
             self.validation_summary.setText(
@@ -1426,6 +1491,17 @@ class MainWindow(QMainWindow):
         return list(dict.fromkeys(
             self.sample_table.item(row, 2).text().strip() or "Sin asignar"
             for row in range(self.sample_table.rowCount())
+        ))
+
+    def _individuals_in_table(self) -> list[str]:
+        return list(dict.fromkeys(
+            value
+            for row in range(self.sample_table.rowCount())
+            if (
+                value := self.sample_table.item(
+                    row, TABLE_COLUMNS["biological_id"]
+                ).text().strip()
+            )
         ))
 
     def import_sample_metadata(self) -> None:
@@ -1463,7 +1539,7 @@ class MainWindow(QMainWindow):
                 f"Coincidencias: {len(result.matched_samples)}",
                 f"Sin metadatos: {len(result.missing_samples)}",
                 f"Filas ajenas al dataset: {len(result.unknown_samples)}",
-                "Campos usados: clase e individuo",
+                "Campos usados: clase y condición / individuo",
             ]
             QMessageBox.information(self, "Importación completada", "\n".join(details))
         except Exception as exc:
@@ -1486,6 +1562,32 @@ class MainWindow(QMainWindow):
         dialog = ClassStyleDialog(active_styles, self)
         if dialog.exec() == QDialog.Accepted:
             self.class_styles.update(dialog.styles)
+            self._set_dirty(True)
+            self.update_score_plot()
+
+    def _ensure_individual_colors(self, factors: list[str]) -> None:
+        for factor in dict.fromkeys(factors):
+            if factor not in self.individual_colors:
+                self.individual_colors[factor] = CLASS_COLORS[
+                    len(self.individual_colors) % len(CLASS_COLORS)
+                ]
+
+    def edit_individual_colors(self) -> None:
+        factors = self._individuals_in_table()
+        if not factors:
+            QMessageBox.information(
+                self,
+                "Condición / individuo",
+                "Asigne primero una condición o individuo a las muestras.",
+            )
+            return
+        self._ensure_individual_colors(factors)
+        active_colors = {
+            factor: self.individual_colors[factor] for factor in factors
+        }
+        dialog = IndividualColorDialog(active_colors, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.individual_colors.update(dialog.colors)
             self._set_dirty(True)
             self.update_score_plot()
 
@@ -1527,62 +1629,42 @@ class MainWindow(QMainWindow):
                 return
             validation_strategy = self.validation_method.currentData()
             data_splits = self.supervised_splits.value()
-            biological_ids = [
-                self.sample_table.item(row, TABLE_COLUMNS["biological_id"]).text().strip()
-                for row in selected
-            ]
-            sample_names = [self.sample_table.item(row, 1).text() for row in selected]
-            units_by_class: dict[str, set[str]] = {name: set() for name in class_counts}
-            unit_classes: dict[str, str] = {}
-            for class_name, biological_id, sample_name in zip(
-                selected_classes, biological_ids, sample_names, strict=True
-            ):
-                unit = biological_id or f"__sample__{sample_name}"
-                previous_class = unit_classes.setdefault(unit, class_name)
-                if previous_class != class_name:
-                    QMessageBox.warning(
-                        self,
-                        "Validación cruzada",
-                        f"El individuo '{biological_id}' aparece en más de una clase.",
-                    )
-                    return
-                units_by_class[class_name].add(unit)
-            limiting_class, limiting_units = min(
-                ((name, len(units)) for name, units in units_by_class.items()),
+            limiting_class, limiting_samples = min(
+                class_counts.items(),
                 key=lambda value: value[1],
             )
-            if validation_strategy == "random_subsets" and limiting_units < data_splits:
+            if validation_strategy == "random_subsets" and limiting_samples < data_splits:
                 QMessageBox.warning(
                     self,
                     "Random subsets",
-                    f"La clase '{limiting_class}' tiene {limiting_units} unidades biológicas "
+                    f"La clase '{limiting_class}' tiene {limiting_samples} muestras "
                     f"independientes y no admite {data_splits} data splits. "
-                    f"Use como máximo {limiting_units}.",
+                    f"Use como máximo {limiting_samples}.",
                 )
                 return
-            if validation_strategy in {"monte_carlo", "leave_one_out"} and limiting_units < 2:
+            if validation_strategy in {"monte_carlo", "leave_one_out"} and limiting_samples < 2:
                 QMessageBox.warning(
                     self,
                     "Validación cruzada",
-                    f"La clase '{limiting_class}' necesita al menos dos unidades biológicas "
+                    f"La clase '{limiting_class}' necesita al menos dos muestras "
                     "independientes para mantener una en entrenamiento.",
                 )
                 return
             if validation_strategy == "venetian_blinds":
-                total_units = len(unit_classes)
-                if limiting_units < 2:
+                total_samples = len(selected)
+                if limiting_samples < 2:
                     QMessageBox.warning(
                         self,
                         "Venetian blinds",
-                        f"La clase '{limiting_class}' necesita al menos dos unidades biológicas "
+                        f"La clase '{limiting_class}' necesita al menos dos muestras "
                         "independientes.",
                     )
                     return
-                if data_splits >= total_units:
+                if data_splits >= total_samples:
                     QMessageBox.warning(
                         self,
                         "Venetian blinds",
-                        f"Use menos de {total_units} bloques para conservar muestras de "
+                        f"Use menos de {total_samples} bloques para conservar muestras de "
                         "entrenamiento en cada submodelo.",
                     )
                     return
@@ -1618,10 +1700,6 @@ class MainWindow(QMainWindow):
                 "train_fraction": self.monte_carlo_train_percent.value() / 100,
                 "seed": 1234,
             },
-            "biological_ids": [
-                self.sample_table.item(row, TABLE_COLUMNS["biological_id"]).text().strip()
-                for row in range(self.sample_table.rowCount())
-            ],
             "orthogonalize_plsda": method == "orthogonalized_plsda",
         }
         job_path.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1880,6 +1958,125 @@ class MainWindow(QMainWindow):
         self.loading_plot.setLabel("bottom", axis_label)
         self.loading_plot.setTitle(f"Loadings — {self.result['component_names'][component]}")
 
+    def _toggle_stocsy_shortcut(self) -> None:
+        self.stocsy_mode_button.setChecked(
+            not self.stocsy_mode_button.isChecked()
+        )
+
+    def _toggle_stocsy_mode(self, active: bool) -> None:
+        if active and not self._stocsy_available():
+            self.stocsy_mode_button.blockSignals(True)
+            self.stocsy_mode_button.setChecked(False)
+            self.stocsy_mode_button.blockSignals(False)
+            QMessageBox.information(
+                self,
+                "S-TOCSY no disponible",
+                "S-TOCSY requiere un modelo calculado sobre un perfil continuo "
+                "con eje numérico de desplazamiento químico.",
+            )
+            return
+        if active:
+            self._install_stocsy_crosshair()
+            self.loading_value_plot.setFocus()
+            self.statusBar().showMessage(
+                "S-TOCSY activo: haga clic sobre el desplazamiento conductor"
+            )
+        else:
+            self._remove_stocsy_crosshair()
+            self.statusBar().showMessage("S-TOCSY desactivado")
+
+    def _stocsy_available(self) -> bool:
+        if self.dataset is None or self.result is None:
+            return False
+        feature_axis = self.result.get("feature_axis", {})
+        return bool(
+            self.dataset.feature_axis_numeric
+            and feature_axis.get("representation", self.dataset.representation)
+            == "continuous_profile"
+            and np.asarray(self.result.get("ppm", [])).size >= 2
+        )
+
+    def _install_stocsy_crosshair(self) -> None:
+        self._remove_stocsy_crosshair()
+        colour = QColor("#AA0000")
+        colour.setAlphaF(0.65)
+        self._stocsy_crosshair_x = pg.InfiniteLine(
+            angle=90, movable=False, pen=pg.mkPen(colour, width=1.5)
+        )
+        self._stocsy_crosshair_y = pg.InfiniteLine(
+            angle=0, movable=False, pen=pg.mkPen(colour, width=1.5)
+        )
+        self.loading_value_plot.addItem(
+            self._stocsy_crosshair_x, ignoreBounds=True
+        )
+        self.loading_value_plot.addItem(
+            self._stocsy_crosshair_y, ignoreBounds=True
+        )
+
+    def _remove_stocsy_crosshair(self) -> None:
+        for line in (self._stocsy_crosshair_x, self._stocsy_crosshair_y):
+            if line is not None:
+                try:
+                    self.loading_value_plot.removeItem(line)
+                except Exception:
+                    pass
+        self._stocsy_crosshair_x = None
+        self._stocsy_crosshair_y = None
+
+    def _stocsy_mouse_moved(self, scene_position) -> None:
+        if not self.stocsy_mode_button.isChecked():
+            return
+        plot_item = self.loading_value_plot.getPlotItem()
+        if not plot_item.sceneBoundingRect().contains(scene_position):
+            return
+        position = plot_item.vb.mapSceneToView(scene_position)
+        if self._stocsy_crosshair_x is not None:
+            self._stocsy_crosshair_x.setPos(position.x())
+        if self._stocsy_crosshair_y is not None:
+            self._stocsy_crosshair_y.setPos(position.y())
+
+    def _stocsy_mouse_clicked(self, event) -> None:
+        if (
+            not self.stocsy_mode_button.isChecked()
+            or event.button() != Qt.MouseButton.LeftButton
+        ):
+            return
+        scene_position = event.scenePos()
+        plot_item = self.loading_value_plot.getPlotItem()
+        if not plot_item.sceneBoundingRect().contains(scene_position):
+            return
+        pivot = float(plot_item.vb.mapSceneToView(scene_position).x())
+        event.accept()
+        self.stocsy_mode_button.setChecked(False)
+        self._open_stocsy_dialog(pivot)
+
+    def _open_stocsy_dialog(self, pivot: float) -> None:
+        if self.dataset is None or self.result is None:
+            return
+        error: str | None = None
+        stocsy_result = None
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            matrix, axis, _names = load_numeric_matrix(
+                self.dataset,
+            )
+            stocsy_result = compute_stocsy(matrix, axis, pivot)
+        except Exception as exc:
+            error = str(exc)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if error is not None or stocsy_result is None:
+            QMessageBox.critical(
+                self, "No se pudo calcular S-TOCSY", error or "Error desconocido"
+            )
+            return
+        dialog = StocsyDialog(
+            stocsy_result,
+            plot_theme=self._plot_theme,
+            parent=self,
+        )
+        dialog.exec()
+
     def update_loading_value_plot(self) -> None:
         if self.result is None or self.loading_value_component.count() == 0:
             return
@@ -1899,7 +2096,11 @@ class MainWindow(QMainWindow):
             "none": "loading sin reescalado",
         }.get(scaling, "loading reescalado")
         self.loading_value_explanation.setText(
-            f"Altura: {scaling_explanation}; color: loading del modelo."
+            f"Altura: {scaling_explanation}; color: loading del modelo. "
+            "Navegación: rueda = zoom vertical; Ctrl + rueda = zoom horizontal; "
+            "Shift/Alt + rueda = desplazamiento horizontal; "
+            "arrastre sobre los ejes = movimiento del eje. "
+            "S = seleccionar pivote S-TOCSY."
         )
         colour_values, plot_values = backscaled_loading_values(
             self.result["loadings"],
@@ -1911,6 +2112,8 @@ class MainWindow(QMainWindow):
             raise ValueError("El eje de variables no coincide con los valores de carga")
 
         self.loading_value_plot.clear()
+        self._stocsy_crosshair_x = None
+        self._stocsy_crosshair_y = None
         finite_ppm = ppm[np.isfinite(ppm)]
         if finite_ppm.size < 2:
             self.loading_value_plot.setTitle("Valores de carga — sin eje de variables válido")
@@ -2017,6 +2220,8 @@ class MainWindow(QMainWindow):
 
         component_name = self.result["component_names"][component]
         self.loading_value_plot.setTitle(f"Valores de carga — {component_name}")
+        if self.stocsy_mode_button.isChecked():
+            self._install_stocsy_crosshair()
 
     def update_model_selection(self) -> None:
         self.model_selection_plot.clear()
@@ -2497,10 +2702,6 @@ class MainWindow(QMainWindow):
             },
             "selected_sample_indices": selected_indices,
             "classes": classes,
-            "biological_ids": [
-                self.sample_table.item(row, TABLE_COLUMNS["biological_id"]).text().strip()
-                for row in range(self.sample_table.rowCount())
-            ],
             "current_components": current_components,
             "current_orthogonal_components": int(opls.get("orthogonal_components", 0)),
             "orthogonal_selection": selection.get("mode", "manual"),
@@ -2799,6 +3000,20 @@ class MainWindow(QMainWindow):
         scores = np.asarray(self.result["scores"], dtype=float)
         classes = self.result["classes"]
         names = self.result["sample_names"]
+        table_rows = [self._sample_table_row(name) for name in names]
+        individuals = [
+            (
+                self.sample_table.item(
+                    row, TABLE_COLUMNS["biological_id"]
+                ).text().strip()
+                if row >= 0 else ""
+            )
+            for row in table_rows
+        ]
+        use_individual = (
+            self.show_individual_border.isChecked()
+            and any(individuals)
+        )
         explained = np.asarray(self.result["explained_variance"], dtype=float) * 100
         self.score_plot.clear()
         self.score_legend.clear()
@@ -2813,28 +3028,76 @@ class MainWindow(QMainWindow):
             ignoreBounds=True,
         )
         unique_classes = list(dict.fromkeys(classes))
+        unique_individuals = list(dict.fromkeys(
+            individual for individual in individuals if individual
+        ))
         self._ensure_class_styles(unique_classes)
-        for index, class_name in enumerate(unique_classes):
-            rows = [i for i, value in enumerate(classes) if value == class_name]
+        self._ensure_individual_colors(unique_individuals)
+        neutral_outline = "#334155" if self._plot_theme == "light" else "#f8fafc"
+        for class_name in unique_classes:
             style = self.class_styles[class_name]
-            scatter = pg.ScatterPlotItem(
-                x=scores[rows, xi], y=scores[rows, yi],
-                size=style.size, symbol=style.symbol, brush=QColor(style.color),
-                pen=pg.mkPen("#ffffff", width=0.8), name=class_name,
-                data=[
-                    {"sample": names[i], "class": classes[i], "table_row": self._sample_table_row(names[i])}
-                    for i in rows
-                ],
-                hoverable=True,
-                hoverSize=14,
-                tip=lambda x, y, data: (
-                    f"Muestra: {data['sample']}\n"
-                    f"Clase: {data['class']}\n"
-                    f"X: {x:.4g}   Y: {y:.4g}"
-                ),
+            individual_groups = (
+                list(dict.fromkeys(
+                    individuals[i]
+                    for i, value in enumerate(classes)
+                    if value == class_name
+                ))
+                if use_individual else [""]
             )
-            scatter.sigClicked.connect(self._score_point_clicked)
-            self.score_plot.addItem(scatter)
+            for individual in individual_groups:
+                rows = [
+                    i for i, value in enumerate(classes)
+                    if value == class_name
+                    and (not use_individual or individuals[i] == individual)
+                ]
+                outline = (
+                    self.individual_colors.get(individual, neutral_outline)
+                    if use_individual else neutral_outline
+                )
+                scatter = pg.ScatterPlotItem(
+                    x=scores[rows, xi], y=scores[rows, yi],
+                    size=style.size, symbol=style.symbol,
+                    brush=QColor(style.color),
+                    pen=pg.mkPen(outline, width=1.5 if use_individual else 0.8),
+                    data=[
+                        {
+                            "sample": names[i],
+                            "class": classes[i],
+                            "individual": individuals[i],
+                            "table_row": table_rows[i],
+                        }
+                        for i in rows
+                    ],
+                    hoverable=True,
+                    hoverSize=14,
+                    tip=lambda x, y, data: (
+                        f"Muestra: {data['sample']}\n"
+                        f"Clase: {data['class']}\n"
+                        f"Condición / individuo: "
+                        f"{data['individual'] or 'Sin asignar'}\n"
+                        f"X: {x:.4g}   Y: {y:.4g}"
+                    ),
+                )
+                scatter.sigClicked.connect(self._score_point_clicked)
+                self.score_plot.addItem(scatter)
+            class_sample = pg.ScatterPlotItem(
+                size=style.size,
+                symbol=style.symbol,
+                brush=QColor(style.color),
+                pen=pg.mkPen(neutral_outline, width=0.8),
+            )
+            self.score_legend.addItem(class_sample, class_name)
+        if use_individual:
+            for individual in unique_individuals:
+                factor_sample = pg.ScatterPlotItem(
+                    size=10,
+                    symbol="o",
+                    brush=QColor(0, 0, 0, 0),
+                    pen=pg.mkPen(
+                        self.individual_colors[individual], width=1.5
+                    ),
+                )
+                self.score_legend.addItem(factor_sample, individual)
         self._add_hotelling_ellipse(scores[:, [xi, yi]])
         self.score_plot.setLabel("bottom", f"{self.result['component_names'][xi]} ({explained[xi]:.2f}%)")
         self.score_plot.setLabel("left", f"{self.result['component_names'][yi]} ({explained[yi]:.2f}%)")
@@ -2859,6 +3122,15 @@ class MainWindow(QMainWindow):
     def _mark_dirty(self, _item: QTableWidgetItem) -> None:
         if not self._loading:
             self._set_dirty(True)
+
+    def _sample_metadata_changed(self, item: QTableWidgetItem) -> None:
+        self._mark_dirty(item)
+        if (
+            not self._loading
+            and item.column() == TABLE_COLUMNS["biological_id"]
+            and self.result is not None
+        ):
+            self.update_score_plot()
 
     def _settings_changed(self, _value: object) -> None:
         if not self._loading and self.dataset is not None:
@@ -2888,7 +3160,9 @@ class MainWindow(QMainWindow):
                     "name": self.sample_table.item(row, 1).text(),
                     "included": self.sample_table.item(row, 0).checkState() == Qt.Checked,
                     "class": self.sample_table.item(row, 2).text().strip() or "Sin asignar",
-                    "biological_id": self.sample_table.item(row, 3).text().strip(),
+                    "biological_id": self.sample_table.item(
+                        row, TABLE_COLUMNS["biological_id"]
+                    ).text().strip(),
                 }
                 for row in range(self.sample_table.rowCount())
             ],
@@ -2915,6 +3189,7 @@ class MainWindow(QMainWindow):
                 },
                 "display": {
                     "show_legend": self.show_legend.isChecked(),
+                    "show_individual_border": self.show_individual_border.isChecked(),
                     "score_x": self.x_component.currentIndex(),
                     "score_y": self.y_component.currentIndex(),
                     "loading_component": self.loading_component.currentIndex(),
@@ -2930,6 +3205,7 @@ class MainWindow(QMainWindow):
             "class_styles": {
                 name: style.to_dict() for name, style in self.class_styles.items()
             },
+            "individual_colors": dict(self.individual_colors),
         }
 
     def save_current_project(self) -> bool:
@@ -2988,6 +3264,10 @@ class MainWindow(QMainWindow):
             self.class_styles = {
                 name: ClassStyle.from_dict(style)
                 for name, style in manifest.get("class_styles", {}).items()
+            }
+            self.individual_colors = {
+                str(name): str(color)
+                for name, color in manifest.get("individual_colors", {}).items()
             }
             self._populate_samples()
             saved_samples = manifest["samples"]
@@ -3050,6 +3330,9 @@ class MainWindow(QMainWindow):
                 self.hotelling_level.setCurrentIndex(level_index)
             display = analysis.get("display", {})
             self.show_legend.setChecked(bool(display.get("show_legend", True)))
+            self.show_individual_border.setChecked(
+                bool(display.get("show_individual_border", True))
+            )
             execution = analysis.get("execution", {})
             target_index = self.execution_target.findData(execution.get("target", "local"))
             if target_index >= 0:
@@ -3237,6 +3520,8 @@ def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--arii-remote-runner":
         return remote_runner_main([sys.argv[2]])
     app = QApplication(sys.argv)
+#    app.setStyle("Windows")
+#    app.setPalette(app.style().standardPalette())
     app.setApplicationName("Arii")
     app.setOrganizationName("Arii")
     app.setApplicationVersion(__version__)

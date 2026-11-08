@@ -12,7 +12,10 @@ HEADER_ALIASES = {
     "class": {"class", "clase", "group", "grupo"},
     "treatment": {"treatment", "tratamiento"},
     "batch": {"batch", "lote"},
-    "biological_id": {"biological_id", "individual", "individuo", "sujeto"},
+    "biological_id": {
+        "biological_id", "individual", "individuo", "sujeto",
+        "condition", "condicion", "condición",
+    },
     "replicate": {"replicate", "replica", "réplica"},
 }
 
