@@ -19,7 +19,7 @@ motor de cálculo remoto.
 Las instalaciones desde código fuente requieren:
 
 - [Git](https://git-scm.com/downloads);
-- [Python 3.12](https://www.python.org/downloads/);
+- [Python 3.12 o 3.13](https://www.python.org/downloads/);
 - R 4.5.x;
 - acceso a Internet durante la instalación de paquetes.
 
@@ -75,7 +75,9 @@ sudo apt install git python3-venv libegl1 libgl1 libdbus-1-3 \
   libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0
 ```
 
-El intérprete utilizado para crear el entorno virtual debe ser Python 3.12. Si
+El intérprete utilizado para crear el entorno virtual debe ser Python 3.12 o
+3.13. El instalador global usa el `python3` predeterminado de la distribución y
+rechaza otras versiones con un mensaje explícito. Si
 es necesario compilar R o dependencias de R desde código fuente, normalmente
 también se requieren:
 
@@ -93,7 +95,7 @@ ofrece esa versión.
 
 ## macOS
 
-Se requiere macOS 11 o posterior y una versión de Python 3.12 adecuada para la
+Se requiere macOS 11 o posterior y una versión de Python 3.12 o 3.13 adecuada para la
 arquitectura del equipo.
 
 Instale uno de los paquetes oficiales de R:

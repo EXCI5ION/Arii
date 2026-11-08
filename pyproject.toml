@@ -7,7 +7,7 @@ name = "arii"
 version = "1.0.1"
 description = "Open-source single-omics chemometrics workbench"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.14"
 authors = [{name = "Gabriel Anderson", email = "gabimiemp@gmail.com"}]
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]

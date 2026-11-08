@@ -9,9 +9,14 @@ permissions:
 
 jobs:
   python:
-    name: Python y Qt (Windows)
-    runs-on: windows-latest
+    name: Python ${{ matrix.python-version }} y Qt (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ["3.12", "3.13"]
 
     steps:
       - name: Descargar código
@@ -20,7 +25,7 @@ jobs:
       - name: Configurar Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Instalar dependencias

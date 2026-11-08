@@ -36,38 +36,36 @@ sus notas de lanzamiento.
 
 ## Instalación desde el código fuente
 
-Arii 1.0.1 requiere **Python 3.12** y la serie **R 4.5.x**. Las instalaciones desde código fuente
+Arii admite **Python 3.12 o 3.13** y la serie **R 4.5.x**. Las instalaciones desde código fuente
 usan [Bioconductor 3.22](https://bioconductor.org/news/bioc_3_22_release/),
 compatible con R 4.5. Consulte la preparación previa en
 [`docs/OS-Requirements.md`](docs/OS-Requirements.md).
 
-### Windows — PowerShell
+### Linux — instalación global automatizada
 
-```powershell
-git clone --branch v1.0.1 --depth 1 https://github.com/EXCI5ION/Arii.git
-cd Arii
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install .
-Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install(version="3.22", ask=FALSE); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org"); stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
-arii-gui
-```
-
-Si PowerShell bloquea la activación del entorno, ejecuta directamente `.\.venv\Scripts\python.exe -m pip ...`.
-
-### Linux
+En Debian, Ubuntu y derivados Python 3.12 o 3.13, el instalador
+selecciona la versión estable más reciente y prepara el entorno Python, el
+runtime privado de R, los comandos globales, los iconos y la entrada del menú:
 
 ```bash
-git clone --branch v1.0.1 --depth 1 https://github.com/EXCI5ION/Arii.git
+git clone --depth 1 https://github.com/EXCI5ION/Arii.git
 cd Arii
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install .
-Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install(version="3.22", ask=FALSE); BiocManager::install("mixOmics", ask=FALSE, update=FALSE); install.packages("jsonlite", repos="https://cloud.r-project.org"); stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
-arii-gui
+python3 install_linux.py
 ```
+
+El script solicita permisos administrativos cuando los necesita. Después de
+instalar, Arii puede abrirse desde el menú de aplicaciones o por consola:
+
+```bash
+arii-gui                 # interfaz gráfica
+arii --help              # interfaz de consola
+sudo arii-update         # buscar e instalar una versión estable nueva
+sudo arii-update --repair
+sudo arii-update --uninstall
+```
+
+La desinstalación elimina la aplicación y sus runtimes globales, pero no los
+datasets ni los proyectos guardados por los usuarios.
 
 ### macOS
 
