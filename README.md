@@ -162,10 +162,11 @@ Los metadatos de autoría y versión se encuentran en
 [`CITATION.cff`](CITATION.cff). GitHub puede generar desde ese archivo una
 referencia en formatos APA y BibTeX.
 
-Mientras se deposita la versión 1.1.0, utilice el DOI conceptual
-[`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788), que
-representa el proyecto Arii y dirige siempre a su versión más reciente. El DOI
-específico de 1.1.0 se incorporará aquí después de que Zenodo procese el release.
+Para citar específicamente Arii 1.1.0, utilice el DOI
+[`10.5281/zenodo.24211548`](https://doi.org/10.5281/zenodo.24211548).
+El DOI conceptual
+[`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788)
+representa el proyecto Arii y dirige siempre a su versión más reciente.
 
 ## Licencia
 
