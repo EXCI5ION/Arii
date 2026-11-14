@@ -95,10 +95,11 @@ class InterfaceOrganizationTests(unittest.TestCase):
                     "arii.gui.QDesktopServices.openUrl", return_value=True
                 ) as open_url:
                     window.open_manual()
-
-            opened_url = open_url.call_args.args[0]
-            self.assertTrue(opened_url.isLocalFile())
-            self.assertEqual(Path(opened_url.toLocalFile()), manual)
+                opened_url = open_url.call_args.args[0]
+                self.assertTrue(opened_url.isLocalFile())
+                self.assertTrue(
+                    os.path.samefile(opened_url.toLocalFile(), manual)
+                )
         finally:
             window._dirty = False
             window.close()
