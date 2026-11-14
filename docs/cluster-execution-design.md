@@ -1,4 +1,4 @@
-# Diseño provisional de ejecución local y en clúster
+# Diseño de ejecución local y en clúster
 
 ## Decisiones de seguridad
 
@@ -13,7 +13,7 @@
 - No habrá host, usuario, partición ni política de la universidad codificados en
   la distribución pública.
 
-## Contrato inicial
+## Contrato de ejecución
 
 La ejecución local ya usa `RJob`, compuesto por el worker R, la especificación
 JSON y la ruta de resultado. `LocalRBackend` traduce ese contrato a un proceso
@@ -47,7 +47,7 @@ ciclo. Las permutaciones pueden dividirse en trabajos independientes,
 ejecutarse en varios nodos y reunirse con validación de índices. Se evita `srun`
 cuando el clúster no puede resolver la identidad del usuario en nodos
 secundarios. La cancelación segura y la reanudación continúan fuera del alcance
-de la versión 1.0.0.
+de la versión 1.1.0.
 
 ## CPU y memoria
 
@@ -57,7 +57,7 @@ partir de la RAM disponible y del tamaño de la matriz. En Slurm, CPU y memoria 
 por trabajo y por nodo; las bibliotecas BLAS se limitan a un hilo para evitar
 sobresuscripción.
 
-## Trabajo posterior a la versión 1.0.0
+## Trabajo posterior a la versión 1.1.0
 
 La conexión actual confirma la huella SSH y puede instalar la clave administrada
 por Arii. Una versión posterior podrá transferir e instalar el runtime desde la
@@ -65,3 +65,8 @@ GUI, ejecutar su prueba de salud y detectar límites de cada centro. Para una
 instalación compartida sin cuentas SSH de los usuarios sería necesario un
 servicio institucional administrado, con SSO, autorización acotada y auditoría;
 no debe construirse sobre la cuenta personal de un investigador.
+
+La aplicación de escritorio y el runtime remoto se versionan de forma
+independiente. Los workers de la aplicación se transfieren con cada trabajo; el
+runtime proporciona R, `mixOmics`, `jsonlite` y sus dependencias. Por ello Arii
+1.1.0 continúa utilizando el runtime de clúster 1.0.0.

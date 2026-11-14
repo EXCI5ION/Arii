@@ -4,9 +4,12 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -16,7 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arii.plot_export import ExactSizeImageExporter
 from arii.stocsy import StocsyResult
+from arii.plot_navigation import SpectralNavigationViewBox
 
 
 def _jet_colormap() -> pg.ColorMap:
@@ -44,13 +49,28 @@ class StocsyDialog(QDialog):
         super().__init__(parent)
         self.result = result
         self.plot_theme = plot_theme
-        self.setWindowTitle(f"S-TOCSY — pivote {result.pivot_value:.6g} ppm")
+        self.setWindowTitle(f"STOCSY — {result.pivot_value:.6g} ppm")
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+        self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, True)
+        self.setSizeGripEnabled(True)
+        self.setMinimumSize(720, 520)
         self.resize(1100, 760)
 
         self.correlation_mode = QComboBox()
         self.correlation_mode.addItem("Correlación con signo", "signed")
         self.correlation_mode.addItem("Correlación absoluta", "absolute")
         self.correlation_mode.currentIndexChanged.connect(self._redraw)
+
+        self.color_minimum = QDoubleSpinBox()
+        self.color_maximum = QDoubleSpinBox()
+        for control in (self.color_minimum, self.color_maximum):
+            control.setDecimals(2)
+            control.setSingleStep(0.05)
+            control.setKeyboardTracking(False)
+            control.setMaximumWidth(90)
+            control.valueChanged.connect(self._apply_color_controls)
+        reset_color_button = QPushButton("Restablecer color")
+        reset_color_button.clicked.connect(self._reset_color_scale)
 
         save_button = QPushButton("Guardar figura…")
         save_button.clicked.connect(self._save_figure)
@@ -60,6 +80,11 @@ class StocsyDialog(QDialog):
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Color"))
         controls.addWidget(self.correlation_mode)
+        controls.addWidget(QLabel("Mínimo"))
+        controls.addWidget(self.color_minimum)
+        controls.addWidget(QLabel("Máximo"))
+        controls.addWidget(self.color_maximum)
+        controls.addWidget(reset_color_button)
         controls.addStretch(1)
         controls.addWidget(save_button)
         controls.addWidget(close_button)
@@ -69,9 +94,12 @@ class StocsyDialog(QDialog):
             f"{result.sample_count} muestras · covarianza muestral (n−1)"
         )
         self.covariance_plot = pg.PlotWidget(
-            title=f"S-TOCSY — pivote {result.pivot_value:.6g} ppm"
+            title=f"<b>STOCSY — {result.pivot_value:.6g} ppm</b>",
+            viewBox=SpectralNavigationViewBox(),
         )
-        self.mean_plot = pg.PlotWidget(title="Perfil promedio")
+        self.mean_plot = pg.PlotWidget(
+            title="Perfil promedio", viewBox=SpectralNavigationViewBox()
+        )
         for plot, label in (
             (self.covariance_plot, "Covarianza"),
             (self.mean_plot, "Intensidad media"),
@@ -110,23 +138,71 @@ class StocsyDialog(QDialog):
         self.mean_colorbar.setImageItem(
             [], insert_in=self.mean_plot.getPlotItem()
         )
+        self.navigation_help = QLabel(
+            "Navegación: rueda = zoom vertical; Ctrl + rueda = zoom horizontal; "
+            "Shift + rueda = desplazamiento horizontal; Alt + rueda = "
+            "desplazamiento vertical; arrastre sobre los ejes = movimiento. "
+            "Los límites de color controlan la saturación visual sin modificar "
+            "las correlaciones calculadas."
+        )
+        self.navigation_help.setWordWrap(True)
 
         layout = QVBoxLayout(self)
         layout.addLayout(controls)
         layout.addWidget(self.summary)
+        layout.addWidget(self.navigation_help)
         layout.addWidget(self.covariance_plot, 1)
         layout.addWidget(self.mean_plot, 1)
         self._redraw()
 
     def _redraw(self, _index: int | None = None) -> None:
         signed = self.correlation_mode.currentData() == "signed"
+        levels = (-1.0, 1.0) if signed else (0.0, 1.0)
+        self._configure_color_controls(levels)
+        self._set_colorbar_levels(levels)
+        self._draw_curves(levels, reset_view=True)
+
+    def _configure_color_controls(self, levels: tuple[float, float]) -> None:
+        allowed_low, allowed_high = levels
+        for control in (self.color_minimum, self.color_maximum):
+            control.blockSignals(True)
+        self.color_minimum.setRange(allowed_low, allowed_high - 0.01)
+        self.color_maximum.setRange(allowed_low + 0.01, allowed_high)
+        self.color_minimum.setValue(allowed_low)
+        self.color_maximum.setValue(allowed_high)
+        for control in (self.color_minimum, self.color_maximum):
+            control.blockSignals(False)
+
+    def _set_colorbar_levels(self, levels: tuple[float, float]) -> None:
+        self.colorbar.setLevels(levels, update_items=False)
+        self.mean_colorbar.setLevels(levels, update_items=False)
+
+    def _apply_color_controls(self, _value: float | None = None) -> None:
+        low = self.color_minimum.value()
+        high = self.color_maximum.value()
+        if high - low < 0.01:
+            return
+        self.color_minimum.setMaximum(high - 0.01)
+        self.color_maximum.setMinimum(low + 0.01)
+        levels = (low, high)
+        self._set_colorbar_levels(levels)
+        self._draw_curves(levels, reset_view=False)
+
+    def _reset_color_scale(self) -> None:
+        signed = self.correlation_mode.currentData() == "signed"
+        levels = (-1.0, 1.0) if signed else (0.0, 1.0)
+        self._configure_color_controls(levels)
+        self._set_colorbar_levels(levels)
+        self._draw_curves(levels, reset_view=False)
+
+    def _draw_curves(
+        self, levels: tuple[float, float], *, reset_view: bool
+    ) -> None:
+        signed = self.correlation_mode.currentData() == "signed"
         colour_values = (
             self.result.correlation
             if signed else np.abs(self.result.correlation)
         )
-        levels = (-1.0, 1.0) if signed else (0.0, 1.0)
-        self.colorbar.setLevels(levels, update_items=False)
-        self.mean_colorbar.setLevels(levels, update_items=False)
 
         for plot, values in (
             (self.covariance_plot, self.result.covariance),
@@ -135,7 +211,7 @@ class StocsyDialog(QDialog):
             plot.clear()
             self._add_coloured_curve(plot, self.result.axis, values, colour_values, levels)
             finite_axis = self.result.axis[np.isfinite(self.result.axis)]
-            if finite_axis.size >= 2:
+            if reset_view and finite_axis.size >= 2:
                 x_min, x_max = float(finite_axis.min()), float(finite_axis.max())
                 span = x_max - x_min
                 plot.setLimits(
@@ -195,8 +271,36 @@ class StocsyDialog(QDialog):
         if not path:
             return
         destination = Path(path)
-        image = self.grab()
+        top_width = max(1, self.covariance_plot.width())
+        top_height = max(1, self.covariance_plot.height())
+        bottom_width = max(1, self.mean_plot.width())
+        bottom_height = max(1, self.mean_plot.height())
+        width = max(top_width, bottom_width)
+        height = top_height + bottom_height
+        top = self._render_plot(self.covariance_plot, top_width, top_height)
+        bottom = self._render_plot(self.mean_plot, bottom_width, bottom_height)
+        image = QImage(width, height, QImage.Format.Format_ARGB32)
+        background = QColor("#ffffff" if self.plot_theme == "light" else "#111827")
+        image.fill(background)
+        painter = QPainter(image)
+        try:
+            painter.drawImage((width - top_width) // 2, 0, top)
+            painter.drawImage(
+                (width - bottom_width) // 2, top_height, bottom
+            )
+        finally:
+            painter.end()
         if not image.save(str(destination)):
             QMessageBox.critical(
                 self, "No se pudo guardar", f"No se pudo escribir {destination}."
             )
+
+    @staticmethod
+    def _render_plot(plot: pg.PlotWidget, width: int, height: int) -> QImage:
+        exporter = ExactSizeImageExporter(plot.getPlotItem())
+        exporter.params.param("width").setValue(width)
+        exporter.params.param("height").setValue(height)
+        image = exporter.export(toBytes=True)
+        if not isinstance(image, QImage):
+            raise RuntimeError("PyQtGraph no devolvió una imagen exportable.")
+        return image

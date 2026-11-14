@@ -17,6 +17,7 @@ a = Analysis(
     datas=[
         (str(project_root / "r"), "r"),
         (str(project_root / "assets" / "icons"), "assets/icons"),
+        (str(project_root / "docs" / "pdf"), "docs/pdf"),
         (str(build_info), "."),
     ],
     hiddenimports=["keyring.backends.Windows", "keyring.backends.fail"],

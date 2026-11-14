@@ -9,9 +9,12 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt
+from PySide6.QtCore import (
+    QProcess, QProcessEnvironment, QSettings, QSysInfo, Qt, QUrl,
+)
 from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QCloseEvent, QIcon, QKeySequence, QShortcut,
+    QAction, QActionGroup, QColor, QCloseEvent, QDesktopServices, QIcon,
+    QKeySequence, QPalette, QPixmap, QShortcut,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,6 +25,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -34,6 +38,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
+    QStyleFactory,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -41,11 +46,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arii import __version__
+from arii import __release_date__, __version__
 from arii.execution import (
     ClusterProfile, LocalRBackend, RJob, SlurmBackend, SlurmResources,
 )
 from arii.loading_values import backscaled_loading_values
+from arii.plot_navigation import LoadingValueViewBox
 from arii import plot_export as _plot_export  # Register Arii's exact-size exporter.
 from arii.project_file import fingerprint_file, load_project, save_project
 from arii.metadata import import_metadata
@@ -56,7 +62,7 @@ from arii.ssh_access import provision_managed_key
 from arii.stocsy import compute_stocsy, load_numeric_matrix
 from arii.stocsy_view import StocsyDialog
 from arii.system_resources import detect_system_resources, recommended_workers
-from arii.resources import asset_path, worker_path
+from arii.resources import asset_path, bundle_root, worker_path
 from arii.r_bridge import r_subprocess_environment
 from arii.remote_runner import launcher_command, main as remote_runner_main
 
@@ -83,6 +89,74 @@ TABLE_COLUMNS = {
     "biological_id": 3,
 }
 
+PROJECT_URL = "https://github.com/EXCI5ION/Arii"
+MANUAL_FILENAME = f"Arii-manual-de-usuario-versión{__version__}.pdf"
+SCIENTIFIC_DOCUMENTATION_FILENAME = (
+    f"Arii-documentacion-cientifica-versión{__version__}.pdf"
+)
+MANUAL_URL = f"{PROJECT_URL}/blob/v{__version__}/docs/pdf/{MANUAL_FILENAME}"
+SCIENTIFIC_DOCUMENTATION_URL = (
+    f"{PROJECT_URL}/blob/v{__version__}/docs/pdf/"
+    f"{SCIENTIFIC_DOCUMENTATION_FILENAME}"
+)
+DOCUMENTATION_URL = f"{PROJECT_URL}/tree/v{__version__}/docs"
+
+
+class AboutDialog(QDialog):
+    """Show Arii identity, version and project provenance."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Acerca de Arii")
+        self.setMinimumWidth(560)
+
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setPixmap(
+            QPixmap(str(asset_path("icons/arii-256.png"))).scaled(
+                180,
+                180,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+        )
+        brand = QLabel("Arii")
+        brand.setAlignment(Qt.AlignCenter)
+        brand.setStyleSheet("font-size: 30px; font-weight: 700;")
+        visual_layout = QVBoxLayout()
+        visual_layout.addWidget(icon_label)
+        visual_layout.addWidget(brand)
+
+        architecture = QSysInfo.currentCpuArchitecture() or "desconocida"
+        information = QLabel(
+            "<h2>Arii</h2>"
+            f"<p><b>Versión:</b> {__version__}<br>"
+            f"<b>Arquitectura:</b> {architecture}<br>"
+            f"<b>Publicada:</b> {__release_date__}</p>"
+            "<p>Copyright © 2026 Gabriel Anderson.</p>"
+            f'<p><a href="{PROJECT_URL}">Página del proyecto</a></p>'
+        )
+        information.setOpenExternalLinks(True)
+        information.setTextInteractionFlags(Qt.TextBrowserInteraction)
+
+        content_layout = QHBoxLayout()
+        content_layout.addLayout(visual_layout)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        content_layout.addWidget(separator)
+        content_layout.addWidget(information, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        close_button = buttons.button(QDialogButtonBox.Close)
+        if close_button is not None:
+            close_button.setText("Cerrar")
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(content_layout)
+        layout.addWidget(buttons)
+
 
 def _matlab_jet_colormap() -> pg.ColorMap:
     positions = np.linspace(0.0, 1.0, 256)
@@ -94,65 +168,6 @@ def _matlab_jet_colormap() -> pg.ColorMap:
 
 
 MATLAB_JET = _matlab_jet_colormap()
-
-
-class LoadingValueViewBox(pg.ViewBox):
-    """ViewBox with axis-specific navigation for dense spectral curves."""
-
-    def wheelEvent(self, event, axis=None) -> None:
-        # AxisItem supplies its own axis explicitly and remains free to
-        # control it. Over the plot: wheel zooms Y, Ctrl+wheel zooms X,
-        # Shift+wheel pans X, and Alt+wheel pans Y.
-        if axis is not None:
-            super().wheelEvent(event, axis=axis)
-            return
-        modifiers = (
-            event.modifiers()
-            if hasattr(event, "modifiers")
-            else Qt.KeyboardModifier.NoModifier
-        )
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
-            super().wheelEvent(event, axis=0)
-            return
-        if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            delta = self._wheel_delta(event)
-            if delta:
-                x_min, x_max = self.viewRange()[0]
-                shift = (delta / 120.0) * (x_max - x_min) * 0.1
-                self.translateBy(x=shift, y=0.0)
-            event.accept()
-            return
-        if modifiers & Qt.KeyboardModifier.AltModifier:
-            delta = self._wheel_delta(event)
-            if delta:
-                y_min, y_max = self.viewRange()[1]
-                shift = (delta / 120.0) * (y_max - y_min) * 0.1
-                self.translateBy(x=0.0, y=shift)
-            event.accept()
-            return
-        super().wheelEvent(event, axis=1)
-
-    @staticmethod
-    def _wheel_delta(event) -> float:
-        if hasattr(event, "angleDelta"):
-            angle_delta = event.angleDelta()
-            if hasattr(angle_delta, "y") and angle_delta.y():
-                return float(angle_delta.y())
-            if hasattr(angle_delta, "x") and angle_delta.x():
-                return float(angle_delta.x())
-        if hasattr(event, "delta"):
-            return float(event.delta())
-        return 0.0
-
-    def mouseDragEvent(self, event, axis=None) -> None:
-        # Plot-area dragging stays disabled because clicks are reserved for a
-        # STOCSY pivot. Dragging directly over an axis keeps PyQtGraph's
-        # axis-specific navigation.
-        if axis is not None:
-            super().mouseDragEvent(event, axis=axis)
-            return
-        if hasattr(event, "accept"):
-            event.accept()
 
 
 class MetadataTableWidget(QTableWidget):
@@ -283,7 +298,7 @@ class IndividualColorDialog(QDialog):
 
     def __init__(self, colors: dict[str, str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Colores de condición / individuo")
+        self.setWindowTitle("Colores de individuos")
         self.colors = dict(colors)
         self._active_factor: str | None = None
         self._color = "#2563eb"
@@ -294,7 +309,7 @@ class IndividualColorDialog(QDialog):
         self.color_button.clicked.connect(self._choose_color)
 
         form = QFormLayout()
-        form.addRow("Condición / individuo", self.factor_combo)
+        form.addRow("Individuo", self.factor_combo)
         form.addRow("Color del borde", self.color_button)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -319,7 +334,7 @@ class IndividualColorDialog(QDialog):
 
     def _choose_color(self) -> None:
         color = QColorDialog.getColor(
-            QColor(self._color), self, "Color de condición / individuo"
+            QColor(self._color), self, "Color del individuo"
         )
         if color.isValid():
             self._color = color.name()
@@ -449,6 +464,8 @@ class ExecutionProfileDialog(QDialog):
         self.preview.setMaximumBlockCount(80)
         validate_button = QPushButton("Validar y previsualizar")
         validate_button.clicked.connect(self._preview)
+        reset_profile_button = QPushButton("Borrar perfil local del clúster…")
+        reset_profile_button.clicked.connect(self._reset_saved_profile)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
@@ -463,6 +480,7 @@ class ExecutionProfileDialog(QDialog):
         layout.addLayout(resource_form)
         layout.addWidget(environment_note)
         layout.addWidget(validate_button)
+        layout.addWidget(reset_profile_button)
         layout.addWidget(self.preview, 1)
         layout.addWidget(buttons)
         self._load()
@@ -578,6 +596,52 @@ class ExecutionProfileDialog(QDialog):
         )
         self.accept()
 
+    def _reset_saved_profile(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Borrar perfil local del clúster",
+            "Se eliminarán de este equipo el servidor, usuario, rutas y recursos "
+            "guardados por Arii. La clave SSH administrada no se borrará ni se "
+            "modificará el servidor remoto.\n\n¿Desea continuar?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        self.settings.remove(self.PROFILE_KEY)
+        self.settings.remove(self.RESOURCES_KEY)
+        self.settings.setValue("execution/target", "local")
+        self.settings.sync()
+
+        self.profile_name.setText("Mi clúster")
+        self.host.clear()
+        self.port.setValue(22)
+        self.username.clear()
+        self.remote_workspace.clear()
+        self.authentication.setCurrentIndex(
+            self.authentication.findData("arii_managed_key")
+        )
+        self.ssh_alias.clear()
+        self.account.clear()
+        self.partition.clear()
+        self.qos.clear()
+        self.rscript_path.clear()
+        self.cpus.setValue(1)
+        self.nodes.setValue(1)
+        self.memory_mb.setValue(8192)
+        self.walltime.setValue(120)
+        self.preview.setPlainText(
+            "El perfil local fue eliminado. Los campos muestran ahora valores "
+            "neutros; puede cerrar esta ventana o configurar otro clúster."
+        )
+
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "execution_target"):
+            local_index = parent.execution_target.findData("local")
+            if local_index >= 0:
+                parent.execution_target.setCurrentIndex(local_index)
+
     def _load(self) -> None:
         try:
             raw_profile = self.settings.value(self.PROFILE_KEY)
@@ -631,6 +695,16 @@ class MainWindow(QMainWindow):
         self.project_path: Path | None = None
         self._dirty = False
         self._loading = False
+        app = QApplication.instance()
+        if app is not None and not hasattr(app, "_arii_system_style_name"):
+            app._arii_system_style_name = app.style().objectName()
+            app._arii_system_palette = QPalette(app.palette())
+        self._system_style_name = (
+            app._arii_system_style_name if app is not None else "Fusion"
+        )
+        self._system_palette = (
+            QPalette(app._arii_system_palette) if app is not None else QPalette()
+        )
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -667,23 +741,59 @@ class MainWindow(QMainWindow):
         execution_menu = self.menuBar().addMenu("Ejecución")
         execution_menu.addAction(configure_execution_action)
 
-        plot_menu = self.menuBar().addMenu("Gráficos")
-        plot_theme_group = QActionGroup(self)
-        plot_theme_group.setExclusive(True)
+        self.graphics_menu = self.menuBar().addMenu("Gráficos")
+        self.theme_menu = self.graphics_menu.addMenu("Tema")
+        self.plot_theme_group = QActionGroup(self)
+        self.plot_theme_group.setExclusive(True)
         saved_plot_theme = str(QSettings().value("display/plot_theme", "dark"))
-        for label, value in (("Tema oscuro", "dark"), ("Tema claro", "light")):
+        if saved_plot_theme not in {"light", "dark", "classic"}:
+            saved_plot_theme = "dark"
+        self.theme_actions: dict[str, QAction] = {}
+        for label, value in (
+            ("Claro", "light"),
+            ("Oscuro", "dark"),
+            ("Clásico", "classic"),
+        ):
             action = QAction(label, self, checkable=True)
             action.setData(value)
             action.setChecked(value == saved_plot_theme)
             action.triggered.connect(
                 lambda _checked=False, theme=value: self._set_plot_theme(theme)
             )
-            plot_theme_group.addAction(action)
-            plot_menu.addAction(action)
+            self.plot_theme_group.addAction(action)
+            self.theme_menu.addAction(action)
+            self.theme_actions[value] = action
+
+        self.style_menu = self.graphics_menu.addMenu("Estilo")
+        class_style_action = QAction("Clases…", self)
+        class_style_action.triggered.connect(self.edit_class_styles)
+        self.style_menu.addAction(class_style_action)
+        individual_style_action = QAction("Individuos…", self)
+        individual_style_action.triggered.connect(self.edit_individual_colors)
+        self.style_menu.addAction(individual_style_action)
+
+        self.help_menu = self.menuBar().addMenu("Ayuda")
+        self.manual_action = QAction("Manual", self)
+        self.manual_action.triggered.connect(self.open_manual)
+        self.scientific_documentation_action = QAction(
+            "Documentación", self
+        )
+        self.scientific_documentation_action.triggered.connect(
+            self.open_scientific_documentation
+        )
+        documentation_action = QAction("Documentación GitHub", self)
+        documentation_action.triggered.connect(self.open_documentation)
+        about_action = QAction("Acerca de Arii", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        self.help_menu.addAction(self.manual_action)
+        self.help_menu.addAction(self.scientific_documentation_action)
+        self.help_menu.addAction(documentation_action)
+        self.help_menu.addSeparator()
+        self.help_menu.addAction(about_action)
 
         self.sample_table = MetadataTableWidget(0, 4)
         self.sample_table.setHorizontalHeaderLabels(
-            ["Incluir", "Muestra", "Clase", "Condición / individuo"]
+            ["Incluir", "Muestra", "Clase", "Individuo"]
         )
         self.sample_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.sample_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -694,14 +804,8 @@ class MainWindow(QMainWindow):
 
         assign_button = QPushButton("Asignar clase a selección")
         assign_button.clicked.connect(self.assign_class)
-        assign_individual_button = QPushButton(
-            "Asignar condición / individuo a selección"
-        )
+        assign_individual_button = QPushButton("Asignar individuo a selección")
         assign_individual_button.clicked.connect(self.assign_individual)
-        style_button = QPushButton("Estilos de clases…")
-        style_button.clicked.connect(self.edit_class_styles)
-        individual_style_button = QPushButton("Colores de condición / individuo…")
-        individual_style_button.clicked.connect(self.edit_individual_colors)
         self.analysis_method = QComboBox()
         self.analysis_method.addItem("PCA", "pca")
         self.analysis_method.addItem("PLS-DA", "plsda")
@@ -786,8 +890,6 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.sample_table, 1)
         left_layout.addWidget(assign_button)
         left_layout.addWidget(assign_individual_button)
-        left_layout.addWidget(style_button)
-        left_layout.addWidget(individual_style_button)
         left_layout.addLayout(controls)
         left_layout.addWidget(self.run_button)
 
@@ -804,7 +906,7 @@ class MainWindow(QMainWindow):
         self.hotelling_level.setCurrentIndex(1)
         self.show_legend = QCheckBox("Mostrar leyendas")
         self.show_legend.setChecked(True)
-        self.show_individual_border = QCheckBox("Borde por condición / individuo")
+        self.show_individual_border = QCheckBox("Borde por individuo")
         self.show_individual_border.setChecked(True)
         self.x_component.currentIndexChanged.connect(self.update_score_plot)
         self.y_component.currentIndexChanged.connect(self.update_score_plot)
@@ -1116,10 +1218,26 @@ class MainWindow(QMainWindow):
         self.loading_value_plot.setMouseEnabled(x=True, y=True)
 
     def _set_plot_theme(self, theme: str, *, redraw: bool = True) -> None:
-        theme = "light" if theme == "light" else "dark"
-        background = "#ffffff" if theme == "light" else "#111827"
-        foreground = "#111827" if theme == "light" else "#f8fafc"
-        self._plot_theme = theme
+        theme = theme if theme in {"light", "dark", "classic"} else "dark"
+        app = QApplication.instance()
+        if app is not None:
+            if theme == "classic":
+                classic_style = QStyleFactory.create("Windows")
+                if classic_style is not None:
+                    app.setStyle(classic_style)
+                app.setPalette(app.style().standardPalette())
+            else:
+                system_style = QStyleFactory.create(self._system_style_name)
+                if system_style is not None:
+                    app.setStyle(system_style)
+                app.setPalette(QPalette(self._system_palette))
+        plot_theme = "light" if theme in {"light", "classic"} else "dark"
+        background = "#ffffff" if plot_theme == "light" else "#111827"
+        foreground = "#111827" if plot_theme == "light" else "#f8fafc"
+        self._display_theme = theme
+        self._plot_theme = plot_theme
+        if hasattr(self, "theme_actions"):
+            self.theme_actions[theme].setChecked(True)
         QSettings().setValue("display/plot_theme", theme)
         pg.setConfigOption("background", background)
         pg.setConfigOption("foreground", foreground)
@@ -1196,6 +1314,55 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 "Perfil Slurm guardado localmente; ya puede seleccionarlo en 'Ejecutar en'"
             )
+
+    def open_manual(self) -> None:
+        """Open the versioned user manual bundled with Arii."""
+
+        self._open_help_document(
+            MANUAL_FILENAME,
+            MANUAL_URL,
+            "No se pudo abrir el manual",
+        )
+
+    def open_scientific_documentation(self) -> None:
+        """Open the versioned scientific documentation bundled with Arii."""
+
+        self._open_help_document(
+            SCIENTIFIC_DOCUMENTATION_FILENAME,
+            SCIENTIFIC_DOCUMENTATION_URL,
+            "No se pudo abrir la documentación científica",
+        )
+
+    def open_documentation(self) -> None:
+        """Open the complete online documentation index."""
+
+        self._open_help_url(
+            DOCUMENTATION_URL,
+            "No se pudo abrir la documentación",
+        )
+
+    def _open_help_document(
+        self,
+        filename: str,
+        fallback_url: str,
+        title: str,
+    ) -> None:
+        path = bundle_root() / "docs" / "pdf" / filename
+        if path.is_file():
+            if QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve()))):
+                return
+        self._open_help_url(fallback_url, title)
+
+    def _open_help_url(self, url: str, title: str) -> None:
+        if not QDesktopServices.openUrl(QUrl(url)):
+            QMessageBox.warning(
+                self,
+                title,
+                f"Puede acceder manualmente a:\n{url}",
+            )
+
+    def show_about_dialog(self) -> None:
+        AboutDialog(self).exec()
 
     @staticmethod
     def _saved_slurm_configuration() -> tuple[ClusterProfile, SlurmResources]:
@@ -1390,7 +1557,7 @@ class MainWindow(QMainWindow):
         rows = sorted({cell.row() for cell in cells})
         if not rows:
             QMessageBox.information(
-                self, "Asignar condición / individuo", "Seleccione una o más filas."
+                self, "Asignar individuo", "Seleccione una o más filas."
             )
             return
         current = self.sample_table.item(
@@ -1399,7 +1566,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QInputDialog
         value, accepted = QInputDialog.getText(
             self,
-            "Asignar condición / individuo",
+            "Asignar individuo",
             "Nombre:",
             text=current,
         )
@@ -1539,7 +1706,7 @@ class MainWindow(QMainWindow):
                 f"Coincidencias: {len(result.matched_samples)}",
                 f"Sin metadatos: {len(result.missing_samples)}",
                 f"Filas ajenas al dataset: {len(result.unknown_samples)}",
-                "Campos usados: clase y condición / individuo",
+                "Campos usados: clase e individuo",
             ]
             QMessageBox.information(self, "Importación completada", "\n".join(details))
         except Exception as exc:
@@ -1577,8 +1744,8 @@ class MainWindow(QMainWindow):
         if not factors:
             QMessageBox.information(
                 self,
-                "Condición / individuo",
-                "Asigne primero una condición o individuo a las muestras.",
+                "Individuo",
+                "Asigne primero un individuo a las muestras.",
             )
             return
         self._ensure_individual_colors(factors)
@@ -3073,7 +3240,7 @@ class MainWindow(QMainWindow):
                     tip=lambda x, y, data: (
                         f"Muestra: {data['sample']}\n"
                         f"Clase: {data['class']}\n"
-                        f"Condición / individuo: "
+                        f"Individuo: "
                         f"{data['individual'] or 'Sin asignar'}\n"
                         f"X: {x:.4g}   Y: {y:.4g}"
                     ),
@@ -3516,13 +3683,18 @@ class MainWindow(QMainWindow):
         )
 
 
+def settings_application_name(*, frozen: bool | None = None) -> str:
+    """Keep source-tree preferences separate from installed Arii preferences."""
+
+    is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    return "Arii" if is_frozen else "Arii Development"
+
+
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--arii-remote-runner":
         return remote_runner_main([sys.argv[2]])
     app = QApplication(sys.argv)
-#    app.setStyle("Windows")
-#    app.setPalette(app.style().standardPalette())
-    app.setApplicationName("Arii")
+    app.setApplicationName(settings_application_name())
     app.setOrganizationName("Arii")
     app.setApplicationVersion(__version__)
     app.setWindowIcon(QIcon(str(asset_path("icons/arii-256.png"))))

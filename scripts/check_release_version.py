@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 def declared_versions(project_root: Path) -> dict[str, str]:
+    """Return only the desktop application version declarations."""
     pyproject = tomllib.loads((project_root / "pyproject.toml").read_text("utf-8"))
     versions = {"pyproject.toml": pyproject["project"]["version"]}
 
@@ -30,12 +31,22 @@ def declared_versions(project_root: Path) -> dict[str, str]:
         r"StringStruct\('ProductVersion', '([^']+)'\)", info_text
     ).group(1)
 
+    citation_text = (project_root / "CITATION.cff").read_text("utf-8")
+    versions["CITATION.cff"] = re.search(
+        r'^version:\s*"([^"]+)"', citation_text, re.MULTILINE
+    ).group(1)
+
+    return versions
+
+
+def declared_cluster_versions(project_root: Path) -> dict[str, str]:
+    """Return the independently versioned cluster-runtime declarations."""
     cluster_text = (project_root / "scripts" / "stage_cluster_release.ps1").read_text(
         "utf-8"
     )
-    versions["scripts/stage_cluster_release.ps1"] = re.search(
+    versions = {"scripts/stage_cluster_release.ps1": re.search(
         r'\[string\]\$Version\s*=\s*"([^"]+)"', cluster_text
-    ).group(1)
+    ).group(1)}
     for relative in (
         "cluster/install-server.sh",
         "cluster/runtime/build-runtime.sbatch",
@@ -56,26 +67,68 @@ def declared_versions(project_root: Path) -> dict[str, str]:
     return versions
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--expected")
-    args = parser.parse_args()
-    project_root = Path(__file__).resolve().parents[1]
-    versions = declared_versions(project_root)
+def declared_release_dates(project_root: Path) -> dict[str, str]:
+    """Return release-date declarations shown in metadata and the About dialog."""
+
+    init_text = (project_root / "src" / "arii" / "__init__.py").read_text("utf-8")
+    citation_text = (project_root / "CITATION.cff").read_text("utf-8")
+    return {
+        "src/arii/__init__.py": re.search(
+            r'^__release_date__\s*=\s*"([^"]+)"', init_text, re.MULTILINE
+        ).group(1),
+        "CITATION.cff": re.search(
+            r"^date-released:\s*['\"]?([^'\"\s]+)",
+            citation_text,
+            re.MULTILINE,
+        ).group(1),
+    }
+
+
+def coherent_version(
+    versions: dict[str, str], *, label: str, expected: str | None = None
+) -> str | None:
     unique = set(versions.values())
     if len(unique) != 1:
         for source, version in versions.items():
             print(f"{source}: {version}", file=sys.stderr)
-        print("ERROR: las versiones declaradas no coinciden", file=sys.stderr)
-        return 1
+        print(f"ERROR: las versiones declaradas de {label} no coinciden", file=sys.stderr)
+        return None
     version = unique.pop()
-    if args.expected is not None and version != args.expected:
+    if expected is not None and version != expected:
         print(
-            f"ERROR: se solicitó {args.expected}, pero el código declara {version}",
+            f"ERROR: se solicitó {label} {expected}, pero el código declara {version}",
             file=sys.stderr,
         )
+        return None
+    return version
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--expected", help="versión esperada de la aplicación")
+    parser.add_argument(
+        "--expected-cluster-runtime",
+        help="versión esperada del runtime de clúster",
+    )
+    args = parser.parse_args()
+    project_root = Path(__file__).resolve().parents[1]
+    application = coherent_version(
+        declared_versions(project_root), label="Arii", expected=args.expected
+    )
+    cluster_runtime = coherent_version(
+        declared_cluster_versions(project_root),
+        label="runtime de clúster",
+        expected=args.expected_cluster_runtime,
+    )
+    release_date = coherent_version(
+        declared_release_dates(project_root),
+        label="fecha de publicación",
+    )
+    if application is None or cluster_runtime is None or release_date is None:
         return 1
-    print(f"Versión coherente: {version}")
+    print(f"Versión de Arii coherente: {application}")
+    print(f"Versión del runtime de clúster coherente: {cluster_runtime}")
+    print(f"Fecha de publicación coherente: {release_date}")
     return 0
 
 

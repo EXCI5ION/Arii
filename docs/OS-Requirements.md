@@ -1,6 +1,6 @@
 # Requisitos del sistema
 
-Esta guía reúne la preparación previa necesaria para instalar Arii 1.0.0. Los
+Esta guía reúne la preparación previa necesaria para instalar Arii 1.1.0. Los
 comandos de instalación de la aplicación se mantienen en el
 [`README.md`](../README.md).
 
@@ -12,7 +12,8 @@ de Windows y no requiere preparar un entorno de desarrollo.
 
 El runtime para servidores o clústeres Linux también incluye R y sus paquetes.
 No debe confundirse con la aplicación de escritorio: solamente proporciona el
-motor de cálculo remoto.
+motor de cálculo remoto. Su ciclo de versión es independiente: Arii 1.1.0
+continúa utilizando el runtime de clúster 1.0.0.
 
 ## Instalación desde el código fuente
 
@@ -23,7 +24,7 @@ Las instalaciones desde código fuente requieren:
 - R 4.5.x;
 - acceso a Internet durante la instalación de paquetes.
 
-Arii 1.0.0 se validó con R 4.5.2 en Windows y R 4.5.3 en Linux. Utiliza
+Arii se validó con R 4.5.2 en Windows y R 4.5.3 en Linux. La versión 1.1.0 utiliza
 [Bioconductor 3.22](https://bioconductor.org/news/bioc_3_22_release/), diseñado
 para la serie R 4.5.
 
@@ -51,6 +52,17 @@ No es necesario descargar individualmente estos paquetes.
 
 - Windows 10 u 11 de 64 bits.
 - No requiere una instalación externa de Python o R.
+
+El paquete se compila para x64. Las compilaciones nuevas también se pueden
+instalar en **Windows 11 ARM64** mediante la capa oficial de compatibilidad x64
+del sistema. En ese caso Arii y su runtime científico se ejecutan emulados, no
+como binarios ARM64 nativos. Esta modalidad debe validarse en hardware ARM64
+antes de considerarse equivalente a la distribución x64; Windows 10 ARM no es
+compatible.
+
+Una distribución totalmente nativa para ARM64 queda pendiente hasta que R y el
+ecosistema Bioconductor para Windows ARM dispongan de una validación comparable
+a la de Windows x86-64.
 
 ### Desde el código fuente
 
@@ -95,24 +107,28 @@ ofrece esa versión.
 
 ## macOS
 
-Se requiere macOS 11 o posterior y una versión de Python 3.12 o 3.13 adecuada para la
-arquitectura del equipo.
+El instalador global admite **macOS 13 o posterior**, tanto en Apple Silicon
+(`arm64`) como en Intel (`x86_64`). Se necesitan:
 
-Instale uno de los paquetes oficiales de R:
+- una Terminal ejecutada de forma nativa, no mediante Rosetta;
+- Python 3.9 o posterior solamente para iniciar el instalador;
+- Git y las herramientas de línea de comandos de Apple;
+- conexión a Internet y al menos 8 GiB libres durante la instalación.
 
-- [R 4.5.3 para Apple silicon](https://cran.r-project.org/bin/macosx/big-sur-arm64/base/R-4.5.3-arm64.pkg);
-- [R 4.5.3 para Intel](https://cran.r-project.org/bin/macosx/big-sur-x86_64/base/R-4.5.3-x86_64.pkg).
-
-Instale además [XQuartz](https://www.xquartz.org/), utilizado por dependencias
-gráficas de `mixOmics`. Si algún paquete R debe compilarse desde código fuente,
-pueden ser necesarias las herramientas de Apple y GNU Fortran:
+El instalador proporciona su propio Python 3.12, R 4.5.3, `mixOmics` y
+`jsonlite`; no necesita instalarlos manualmente. Las herramientas de Apple se
+obtienen con:
 
 ```bash
 xcode-select --install
 ```
 
-Los compiladores compatibles están disponibles en la
-[página de herramientas de R para macOS](https://mac.r-project.org/tools/).
+En una instalación manual desde el código fuente, utilice Python 3.12 o 3.13 y
+uno de los paquetes oficiales de R 4.5.3 para
+[Apple Silicon](https://cran.r-project.org/bin/macosx/big-sur-arm64/base/R-4.5.3-arm64.pkg)
+o [Intel](https://cran.r-project.org/bin/macosx/big-sur-x86_64/base/R-4.5.3-x86_64.pkg).
+Algunas dependencias gráficas de R también pueden requerir
+[XQuartz](https://www.xquartz.org/).
 
 ## Servidor o clúster Linux
 

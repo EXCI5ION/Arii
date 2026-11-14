@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.1",
+    [string]$Version = "1.0.0",
     [Parameter(Mandatory = $true)]
     [string]$ExplicitLock,
     [string]$OutputDirectory = "build\cluster-release-kit",
@@ -13,9 +13,9 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "No se encontró el entorno .venv-win."
 }
 & $python (Join-Path $projectRoot "scripts\check_release_version.py") `
-    --expected $Version
+    --expected-cluster-runtime $Version
 if ($LASTEXITCODE -ne 0) {
-    throw "Las versiones declaradas de Arii no coinciden."
+    throw "Las versiones declaradas del runtime de clúster no coinciden."
 }
 $buildInfoPath = Join-Path $projectRoot "build\arii-build-info.json"
 $buildInfoArguments = @(

@@ -4,14 +4,17 @@ import tempfile
 import unittest
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pyqtgraph as pg
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
+from arii.gui import LoadingValueViewBox
 from arii.omics_matrix import inspect_omics_matrix
 from arii.stocsy import compute_stocsy, load_numeric_matrix
 from arii.stocsy_view import StocsyDialog
@@ -114,14 +117,26 @@ class StocsyDialogTests(unittest.TestCase):
         self.app.processEvents()
         self.assertGreater(len(dialog.covariance_plot.items()), 0)
         self.assertGreater(len(dialog.mean_plot.items()), 0)
+        # Interactive color bars contain horizontal InfiniteLine handles; the
+        # STOCSY curve itself must not add a vertical pivot marker.
         self.assertFalse(any(
-            isinstance(item, pg.InfiniteLine)
+            isinstance(item, pg.InfiniteLine) and item.angle == 90
             for item in dialog.covariance_plot.items()
         ))
-        self.assertIn("pivote 1", dialog.covariance_plot.getPlotItem().titleLabel.text)
+        title = dialog.covariance_plot.getPlotItem().titleLabel.text
+        self.assertIn("STOCSY — 1 ppm", title)
+        self.assertNotIn("pivote", title.lower())
         self.assertIn("dataset completo", dialog.summary.text())
         self.assertIsInstance(dialog.colorbar, pg.ColorBarItem)
         self.assertIsInstance(dialog.mean_colorbar, pg.ColorBarItem)
+        self.assertTrue(dialog.isSizeGripEnabled())
+        self.assertTrue(
+            dialog.windowFlags() & Qt.WindowType.WindowMaximizeButtonHint
+        )
+        self.assertIsInstance(
+            dialog.covariance_plot.getViewBox(), LoadingValueViewBox
+        )
+        self.assertIsInstance(dialog.mean_plot.getViewBox(), LoadingValueViewBox)
         covariance_width = (
             dialog.covariance_plot.getPlotItem().vb.sceneBoundingRect().width()
         )
@@ -134,7 +149,36 @@ class StocsyDialogTests(unittest.TestCase):
         self.assertEqual(tuple(dialog.colorbar.levels()), (0.0, 1.0))
         self.assertEqual(tuple(dialog.mean_colorbar.levels()), (0.0, 1.0))
         self.assertGreater(len(dialog.covariance_plot.items()), 0)
+
+        dialog.color_minimum.setValue(0.35)
+        dialog.color_maximum.setValue(0.8)
+        self.assertEqual(tuple(dialog.colorbar.levels()), (0.35, 0.8))
+        self.assertEqual(tuple(dialog.mean_colorbar.levels()), (0.35, 0.8))
+
+        exported = dialog._render_plot(dialog.covariance_plot, 900, 500)
+        self.assertEqual((exported.width(), exported.height()), (900, 500))
+
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "stocsy.png"
+            expected_width = max(
+                dialog.covariance_plot.width(), dialog.mean_plot.width()
+            )
+            expected_height = (
+                dialog.covariance_plot.height() + dialog.mean_plot.height()
+            )
+            with patch(
+                "arii.stocsy_view.QFileDialog.getSaveFileName",
+                return_value=(str(destination), "Imagen PNG (*.png)"),
+            ):
+                dialog._save_figure()
+            saved = pg.Qt.QtGui.QImage(str(destination))
+            self.assertEqual(
+                (saved.width(), saved.height()),
+                (expected_width, expected_height),
+            )
         dialog.close()
+        dialog.deleteLater()
+        self.app.processEvents()
 
 
 if __name__ == "__main__":

@@ -55,6 +55,49 @@ jobs:
           python scripts/check_release_version.py
           python -m pytest -q
 
+  macos:
+    name: Python ${{ matrix.python-version }} y Qt (${{ matrix.architecture }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            architecture: Apple Silicon
+            python-version: "3.12"
+          - os: macos-15
+            architecture: Apple Silicon
+            python-version: "3.13"
+          - os: macos-15-intel
+            architecture: Intel
+            python-version: "3.12"
+          - os: macos-15-intel
+            architecture: Intel
+            python-version: "3.13"
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v5
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Instalar dependencias
+        run: python -m pip install -e ".[dev]"
+
+      - name: Verificar arquitectura y ejecutar pruebas
+        env:
+          ARII_SKIP_R_TESTS: "1"
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import platform; print(platform.platform(), platform.machine())"
+          python scripts/check_release_version.py
+          python -m pytest -q
+
   r-workers:
     name: Motor científico R (Ubuntu)
     runs-on: ubuntu-latest

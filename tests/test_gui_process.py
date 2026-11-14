@@ -9,10 +9,180 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QProcess
-from PySide6.QtWidgets import QApplication, QTableWidgetItem
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidgetItem,
+)
 import pyqtgraph as pg
 
-from arii.gui import MainWindow, TABLE_COLUMNS
+from arii.gui import (
+    AboutDialog,
+    ExecutionProfileDialog,
+    MANUAL_FILENAME,
+    MainWindow,
+    TABLE_COLUMNS,
+    settings_application_name,
+)
+
+
+class InterfaceOrganizationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+        cls.app.setOrganizationName("AriiTests")
+        cls.app.setApplicationName("AriiTests")
+
+    def test_graphics_menu_groups_themes_and_styles(self) -> None:
+        window = MainWindow()
+        try:
+            self.assertEqual(window.theme_menu.title(), "Tema")
+            self.assertEqual(
+                [action.text() for action in window.theme_menu.actions()],
+                ["Claro", "Oscuro", "Clásico"],
+            )
+            self.assertEqual(window.style_menu.title(), "Estilo")
+            self.assertEqual(
+                [action.text() for action in window.style_menu.actions()],
+                ["Clases…", "Individuos…"],
+            )
+            self.assertEqual(
+                window.sample_table.horizontalHeaderItem(
+                    TABLE_COLUMNS["biological_id"]
+                ).text(),
+                "Individuo",
+            )
+            button_texts = {
+                button.text() for button in window.findChildren(QPushButton)
+            }
+            self.assertIn("Asignar individuo a selección", button_texts)
+            self.assertNotIn("Estilos de clases…", button_texts)
+            self.assertNotIn("Colores de individuos…", button_texts)
+            self.assertEqual(self.help_menu_title(window), "Ayuda")
+            self.assertEqual(
+                [
+                    action.text()
+                    for action in window.help_menu.actions()
+                    if not action.isSeparator()
+                ],
+                [
+                    "Manual",
+                    "Documentación",
+                    "Documentación GitHub",
+                    "Acerca de Arii",
+                ],
+            )
+        finally:
+            window._dirty = False
+            window.close()
+
+    @staticmethod
+    def help_menu_title(window: MainWindow) -> str:
+        return window.help_menu.title().replace("&", "")
+
+    def test_help_document_prefers_the_bundled_pdf(self) -> None:
+        window = MainWindow()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manual = root / "docs" / "pdf" / MANUAL_FILENAME
+                manual.parent.mkdir(parents=True)
+                manual.touch()
+                with patch("arii.gui.bundle_root", return_value=root), patch(
+                    "arii.gui.QDesktopServices.openUrl", return_value=True
+                ) as open_url:
+                    window.open_manual()
+
+            opened_url = open_url.call_args.args[0]
+            self.assertTrue(opened_url.isLocalFile())
+            self.assertEqual(Path(opened_url.toLocalFile()), manual)
+        finally:
+            window._dirty = False
+            window.close()
+
+    def test_about_dialog_reads_version_and_release_metadata(self) -> None:
+        dialog = AboutDialog()
+        try:
+            text = "\n".join(label.text() for label in dialog.findChildren(QLabel))
+            self.assertIn("Versión:</b> 1.1.0", text)
+            self.assertIn("Publicada:</b> 2026-11-13", text)
+            self.assertIn("Gabriel Anderson", text)
+            self.assertIn("Página del proyecto", text)
+        finally:
+            dialog.close()
+
+    def test_source_and_installed_preferences_use_different_namespaces(self) -> None:
+        self.assertEqual(settings_application_name(frozen=False), "Arii Development")
+        self.assertEqual(settings_application_name(frozen=True), "Arii")
+
+    def test_cluster_profile_can_be_cleared_without_touching_credentials(self) -> None:
+        class MemorySettings:
+            def __init__(self) -> None:
+                self.values = {
+                    ExecutionProfileDialog.PROFILE_KEY: '{"saved": true}',
+                    ExecutionProfileDialog.RESOURCES_KEY: '{"cpus": 8}',
+                    "execution/target": "slurm",
+                }
+
+            def value(self, key: str, default=None):
+                return self.values.get(key, default)
+
+            def setValue(self, key: str, value) -> None:
+                self.values[key] = value
+
+            def remove(self, key: str) -> None:
+                self.values.pop(key, None)
+
+            def sync(self) -> None:
+                pass
+
+        settings = MemorySettings()
+        with patch("arii.gui.QSettings", return_value=settings):
+            dialog = ExecutionProfileDialog()
+        try:
+            dialog.host.setText("cluster.example.edu")
+            dialog.username.setText("researcher")
+            dialog.remote_workspace.setText("/scratch/researcher/arii")
+            with patch(
+                "arii.gui.QMessageBox.question",
+                return_value=QMessageBox.Yes,
+            ):
+                dialog._reset_saved_profile()
+
+            self.assertIsNone(settings.value(ExecutionProfileDialog.PROFILE_KEY))
+            self.assertIsNone(settings.value(ExecutionProfileDialog.RESOURCES_KEY))
+            self.assertEqual(settings.value("execution/target"), "local")
+            self.assertEqual(dialog.profile_name.text(), "Mi clúster")
+            self.assertEqual(dialog.host.text(), "")
+            self.assertEqual(dialog.port.value(), 22)
+            self.assertEqual(dialog.username.text(), "")
+            self.assertEqual(dialog.remote_workspace.text(), "")
+            self.assertEqual(dialog.partition.text(), "")
+        finally:
+            dialog.close()
+
+    def test_classic_theme_forces_windows_style_and_light_palette(self) -> None:
+        window = MainWindow()
+        previous_theme = window._display_theme
+        try:
+            window._set_plot_theme("classic", redraw=False)
+
+            self.assertEqual(window._display_theme, "classic")
+            self.assertEqual(window._plot_theme, "light")
+            self.assertTrue(window.theme_actions["classic"].isChecked())
+            self.assertEqual(self.app.style().objectName().lower(), "windows")
+            window_colour = self.app.palette().color(QPalette.ColorRole.Window)
+            self.assertGreater(window_colour.lightness(), 128)
+        finally:
+            restored = str(previous_theme)
+            if restored not in {"light", "dark", "classic"}:
+                restored = "dark"
+            window._set_plot_theme(restored, redraw=False)
+            window._dirty = False
+            window.close()
 
 
 class ProcessLifecycleTests(unittest.TestCase):

@@ -1,3 +1,4 @@
 """Arii chemometrics workbench."""
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
+__release_date__ = "2026-11-13"

@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ARII_ROOT="${ARII_ROOT:-$HOME/arii}"
-VERSION="${ARII_VERSION:-1.0.1}"
+VERSION="${ARII_VERSION:-1.0.0}"
 SOURCE_ENV="${ARII_SOURCE_ENV:-$ARII_ROOT/runtime/envs/arii-r-2026.08}"
 CONDA_PACK="${ARII_CONDA_PACK:-$ARII_ROOT/runtime/tools/conda-pack-0.8.1/bin/conda-pack}"
 SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"

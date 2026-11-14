@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ARII_ROOT="${ARII_ROOT:-$HOME/arii}"
-VERSION="${ARII_VERSION:-1.0.1}"
+VERSION="${ARII_VERSION:-1.0.0}"
 RELEASE_DIR="${ARII_RELEASE_DIR:-$ARII_ROOT/releases}"
 ROOT_NAME="Arii-${VERSION}-cluster-runtime-linux-x86_64"
 ARCHIVE="$RELEASE_DIR/${ROOT_NAME}.tar.gz"

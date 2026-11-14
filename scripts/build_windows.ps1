@@ -138,9 +138,17 @@ try {
         }
     }
     if ($Installer) {
-        $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-        if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
-            throw "No se encontró Inno Setup 6."
+        $compilerCandidates = @(
+            "C:\Program Files\Inno Setup 7\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup 7\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+        )
+        $compiler = $compilerCandidates |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+        if (-not $compiler) {
+            throw "No se encontró Inno Setup 6.3 o posterior."
         }
         & $compiler "packaging\windows\arii.iss"
         if ($LASTEXITCODE -ne 0) {

@@ -1,0 +1,782 @@
+% Manual editable de Arii.
+% Compilar dos veces para actualizar el índice y los enlaces internos.
+\documentclass[11pt,a4paper,openany]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{csquotes}
+
+\geometry{top=24mm,bottom=23mm,inner=24mm,outer=21mm,headheight=15pt}
+\definecolor{AriiNavy}{HTML}{071B3A}
+\definecolor{AriiBlue}{HTML}{087DD1}
+\definecolor{AriiCyan}{HTML}{11C6DF}
+\definecolor{AriiViolet}{HTML}{7C3AED}
+\definecolor{AriiMagenta}{HTML}{D946EF}
+\definecolor{AriiLight}{HTML}{F3F8FC}
+\definecolor{AriiGray}{HTML}{46566A}
+
+\newcommand{\AriiVersion}{1.1.0}
+\newcommand{\menu}[1]{\textbf{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\tecla}[1]{\fbox{\strut\textsf{#1}}}
+\IfFileExists{../assets/branding/readme-header-light.png}
+  {\newcommand{\AriiHeader}{../assets/branding/readme-header-light.png}}
+  {\IfFileExists{assets/branding/readme-header-light.png}
+    {\newcommand{\AriiHeader}{assets/branding/readme-header-light.png}}
+    {\newcommand{\AriiHeader}{readme-header-light.png}}}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=AriiBlue,
+  urlcolor=AriiViolet,
+  citecolor=AriiMagenta,
+  pdftitle={Arii -- Manual de usuario},
+  pdfauthor={Gabriel Anderson}
+}
+
+\setlist[itemize]{leftmargin=6mm,itemsep=2pt,topsep=4pt}
+\setlist[enumerate]{leftmargin=7mm,itemsep=3pt,topsep=4pt}
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{2}
+
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\color{AriiNavy}}
+  {\color{AriiBlue}\Large\chaptername\ \thechapter}
+  {4pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{35pt}{24pt}
+\titleformat{\section}{\normalfont\Large\bfseries\color{AriiNavy}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{AriiNavy}}{\thesubsection}{0.7em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{AriiGray}{Arii}}
+\fancyhead[R]{\small\textcolor{AriiGray}{\nouppercase{\leftmark}}}
+\fancyfoot[C]{\small\textcolor{AriiGray}{\thepage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyfoot[C]{\small\textcolor{AriiGray}{\thepage}}
+  \renewcommand{\headrulewidth}{0pt}
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{AriiLight},
+  frame=single,
+  rulecolor=\color{AriiCyan},
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false
+}
+\raggedbottom
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{13mm}
+  \includegraphics[width=0.92\textwidth]{\AriiHeader}
+  \vspace{22mm}
+  
+  {\Huge\bfseries\color{AriiNavy} Manual de usuario Arii\par}
+  \vspace{8mm}
+  {\Large\color{AriiGray}Preparación, modelado e interpretación de matrices ómicas\par}
+  \vfill
+  {\large Gabriel Anderson\par}
+  \vspace{3mm}
+  {\large Arii \AriiVersion\par}
+  \vspace{15mm}
+\end{titlepage}
+
+\pagenumbering{roman}
+\pdfbookmark[0]{Índice general}{toc}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+\chapter{Introducción}
+
+\section{Propósito}
+
+Arii es una aplicación de escritorio para el análisis quimiométrico de
+matrices ómicas. Permite ejecutar PCA, PLS-DA y una representación OPLS-DA
+binaria a partir de modelos calculados con \code{mixOmics}, sin exigir que el
+usuario programe en R o Python. La interfaz reúne la definición de muestras, la
+configuración del modelo, la validación cruzada y la inspección de resultados en
+un mismo flujo de trabajo.
+
+Arii está dirigido a investigadores que disponen de una matriz numérica procesada. En el caso de datos RMN, puede usar \href{https://www.github.com/EXCI5ION/GIULI/}{GIULI} para procesar sus datos y exportar la matriz numérica necesaria. Puede trabajar con perfiles continuos, como espectros de RMN, o con tablas de características discretas, como áreas cromatográficas, metabolitos, proteínas o genes. Arii ayuda a construir y revisar el modelo.
+
+Este programa es gratuito y de código abierto distribuido bajo la licencia GPL-3.0. Su propósito es ofrecer una alternativa libre para el trabajo científico y académico, sin dependencia de licencias de software propietario.
+
+\section{Alcance de la versión}
+
+La versión \AriiVersion\ trabaja con una matriz por análisis. El archivo debe
+contener valores finitos y una identificación única para muestras y variables.
+La normalización, transformación, alineamiento, corrección de lote, imputación y
+control de calidad propios de cada plataforma deben resolverse antes de cargar
+la matriz. El centrado y el escalado estadístico sí forman parte del modelo y se
+configuran en Arii.
+
+\section{Organización de la interfaz}
+
+La ventana principal se divide en dos zonas:
+
+\begin{itemize}
+  \item El \textbf{panel izquierdo} contiene la tabla de muestras y los
+  controles del análisis. Desde allí se decide qué muestras se incluyen, qué
+  clase e individuo tiene cada una, qué modelo se ejecutará y cómo se validará.
+  \item El \textbf{panel derecho} contiene las pestañas de resultados. Algunas
+  vistas sólo están disponibles para modelos supervisados o para perfiles
+  continuos. Cambiar una vista no recalcula el modelo salvo que la interfaz lo
+  indique expresamente.
+\end{itemize}
+
+Los menús \menu{Archivo}, \menu{Ejecución} y \menu{Gráficos} agrupan la carga y
+persistencia, la configuración local o remota y la apariencia de las figuras.
+Las opciones que no son compatibles con el estado actual permanecen
+desactivadas.
+
+\newpage
+
+\section{Flujo general}
+
+\begin{enumerate}[leftmargin=*]
+  \item Prepare una matriz coherente y documente el tratamiento previo.
+  \item Cargue el archivo y compruebe orientación, representación, dimensiones
+  y nombres de muestra.
+  \item Incluya las muestras apropiadas y asigne clase e individuo cuando
+  corresponda.
+  \item Elija modelo, escalado, complejidad máxima y estrategia de validación.
+  \item Ejecute el trabajo localmente o en un clúster Slurm.
+  \item Revise primero la calidad y la validación; interprete después scores,
+  loadings y vistas complementarias.
+  \item Guarde el proyecto y, cuando corresponda, exporte la figura o los datos
+  de loadings necesarios para su trabajo posterior.
+\end{enumerate}
+
+No conviene comenzar por la figura de scores. Esa vista resume el modelo, pero
+no informa por sí sola si la complejidad elegida generaliza ni si la separación
+se debe a la variable biológica de interés.
+
+\chapter{Instalación}
+
+\section{Windows}
+
+La opción recomendada para Windows x64 es el instalador publicado en
+\href{https://github.com/EXCI5ION/Arii/releases/latest}{GitHub Releases}. Incluye
+la aplicación y un runtime privado de R. No es necesario instalar R por separado.
+
+Para arquitecturas sin instalador compatible, use la instalación desde código
+fuente descrita en \code{docs/OS-Requirements.md}.
+
+Tras instalar, abra Arii desde el acceso directo o desde el menú Inicio. El
+instalador mantiene sus runtimes privados separados de instalaciones globales
+de Python y R; por eso no es necesario modificar la configuración de otros programas.
+
+\section{Linux}
+
+En Debian, Ubuntu y derivados:
+
+\begin{lstlisting}[language=bash]
+git clone --depth 1 https://github.com/EXCI5ION/Arii.git
+cd Arii
+python3 install_linux.py
+\end{lstlisting}
+
+Después de instalar, \code{arii-gui} abre la interfaz y \code{arii --help}
+muestra la consola.
+
+\section{macOS}
+
+En macOS 13 o posterior, tanto Apple Silicon como Intel:
+
+\begin{lstlisting}[language=bash]
+git clone --depth 1 https://github.com/EXCI5ION/Arii.git
+cd Arii
+python3 install_macos.py
+\end{lstlisting}
+
+El instalador crea \code{Arii.app} y prepara runtimes privados. Consulte siempre
+los requisitos de la versión publicada.
+
+\section{Comprobación de la instalación}
+
+Al abrir Arii, cargue primero un dataset pequeño y ejecute un PCA de dos
+componentes. Esta prueba verifica la interfaz, el acceso al motor R y la
+comunicación con \code{mixOmics}. Si la aplicación abre pero el cálculo no
+comienza, consulte el capítulo de solución de problemas antes de reinstalar.
+
+Las instalaciones desde código también incluyen la consola. El comando
+\code{arii r-health} comprueba que R y los paquetes científicos requeridos son
+accesibles.
+
+\chapter{Dataset y panel de muestras}
+
+\section{Carga}
+
+Use \menu{Archivo \texorpdfstring{$\rightarrow$}{ > } Abrir dataset…} o
+\tecla{Ctrl+O}. Arii admite CSV, TSV y TXT,
+con muestras en filas o columnas. Detecta el delimitador, propone una
+orientación y normaliza internamente la matriz al convenio
+\emph{muestras x variables}. El archivo original no se modifica.
+
+Después de la carga, la pestaña \menu{Resumen} informa el número de muestras y
+variables, la modalidad sugerida, la representación y la orientación detectada.
+Compruebe esos datos antes de ejecutar. Una matriz transpuesta puede seguir
+siendo numéricamente válida y, sin embargo, responder una pregunta distinta.
+
+Los perfiles RMN suelen tener el desplazamiento químico en una fila o columna;
+las tablas de GC/LC-MS suelen usar nombres de características. Los valores
+faltantes deben representar una decisión analítica explícita, no una mezcla de
+ceros, blancos y ausencia de detección.
+
+\subsection{Forma mínima del archivo}
+
+La primera fila y la primera columna contienen identificadores. El bloque
+restante debe ser estrictamente numérico. Los identificadores deben ser únicos y
+no estar vacíos. Arii rechaza valores no numéricos, infinitos o ausentes porque
+una imputación genérica podría introducir estructura artificial.
+
+En un \textbf{perfil continuo}, el eje de variables es numérico y ordenado; por
+ejemplo, ppm. En una \textbf{tabla de características}, el orden de genes,
+proteínas o metabolitos no implica continuidad. Esta diferencia afecta la forma
+de dibujar loadings y determina si STOCSY está disponible.
+
+\section{Incluir, clase e individuo}
+
+La casilla \menu{Incluir} controla qué muestras participan. La clase se usa como
+respuesta en PLS-DA y OPLS-DA. El \menu{individuo} permite mantener réplicas juntas en la validación y, en scores, puede actuar como segundo factor visual mediante el borde del punto.
+
+Para asignar un valor a varias filas, selecciónelas en la tabla y use
+\menu{Asignar clase a selección} o \menu{Asignar individuo a selección}. También
+puede importar una tabla desde
+\menu{Archivo \texorpdfstring{$\rightarrow$}{ > } Importar clases e individuos…}.
+La unión se realiza por nombre de muestra, no por la posición de la fila.
+
+No use \emph{Individuo} como un simple rótulo estético cuando existen medidas
+repetidas: ese campo define la unidad de remuestreo. Todas las réplicas de un
+mismo individuo permanecen juntas en entrenamiento o validación. Un individuo
+no puede pertenecer simultáneamente a dos clases.
+
+Los colores y símbolos se configuran desde
+\menu{Gráficos \texorpdfstring{$\rightarrow$}{ > } Estilo
+\texorpdfstring{$\rightarrow$}{ > } Clases…} y
+\menu{Gráficos \texorpdfstring{$\rightarrow$}{ > } Estilo
+\texorpdfstring{$\rightarrow$}{ > } Individuos…}. Los temas claro, oscuro y
+clásico están en
+\menu{Gráficos \texorpdfstring{$\rightarrow$}{ > } Tema}.
+
+\chapter{Configuración del análisis}
+
+\section{Modelos}
+
+\begin{description}[leftmargin=3.2cm,style=nextline]
+  \item[PCA] Exploración no supervisada de la variación de X.
+  \item[PLS-DA] Clasificación supervisada para dos o más clases.
+  \item[OPLS-DA] Vista binaria con una componente predictiva y componentes
+  ortogonales. Requiere exactamente dos clases.
+\end{description}
+
+Comience con PCA incluso si la pregunta final es supervisada. Un PCA puede
+revelar muestras extremas, deriva, lote o agrupamientos no previstos antes de
+introducir las clases. Pase a PLS-DA u OPLS-DA cuando la pregunta sea realmente
+discriminante y exista un número razonable de unidades independientes por grupo.
+
+\section{Centrado y escalado}
+
+Seleccione Pareto, varianza unitaria o sin escalado. Todas las opciones centran
+por la media:
+
+\begin{description}[leftmargin=3.2cm,style=nextline]
+  \item[Pareto] Divide cada variable centrada por la raíz cuadrada de su
+  desviación estándar. Reduce la dominancia de señales intensas sin igualar por
+  completo la varianza de todas las variables. Es una elección frecuente para
+  perfiles metabolómicos.
+  \item[Varianza unitaria] Divide por la desviación estándar. Otorga un peso
+  semejante a variables de escalas diferentes, pero también puede amplificar
+  ruido de baja varianza.
+  \item[Sin escalado] Sólo centra. Conserva las diferencias de magnitud y hace
+  que las variables más intensas o variables dominen el modelo.
+\end{description}
+
+No elija mecánicamente: compare la decisión con la técnica, la distribución de
+intensidades y la pregunta científica. Las variables constantes se excluyen del
+ajuste porque no aportan información y no pueden escalarse.
+
+\section{Validación cruzada}
+
+Los modelos supervisados permiten:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Random subsets}: repeticiones de folds estratificados; por
+  defecto 20 por 5.
+  \item \textbf{Monte Carlo}: particiones aleatorias con fracción de entrenamiento
+  configurable.
+  \item \textbf{Leave-one-out}: deja una unidad fuera por submodelo.
+  \item \textbf{Venetian blinds}: asigna sistemáticamente unidades ordenadas a
+  folds.
+\end{itemize}
+
+El resumen bajo los controles informa la fracción y cantidad de submodelos. Si
+hay individuos, Arii valida por individuo y no por réplica aislada. En cada
+submodelo, el centrado y el escalado se estiman exclusivamente con el conjunto
+de entrenamiento y después se aplican a las muestras externas.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.23\textwidth}XX@{}}
+\toprule
+\textbf{Estrategia} & \textbf{Cuándo resulta útil} & \textbf{Precaución principal} \\
+\midrule
+Random subsets & Estimación repetida y estratificada del rendimiento interno. &
+Cada clase debe tener al menos tantas unidades como folds. \\
+Monte Carlo & Explorar muchas particiones aleatorias con una fracción de
+entrenamiento elegida. & La cobertura externa puede ser desigual. \\
+Leave-one-out & Conjuntos pequeños y unidades claramente independientes. &
+Puede tener alta varianza y coste elevado. \\
+Venetian blinds & Datos con un orden justificable y sin estructura adversa. &
+El orden no debe codificar clase, lote o deriva. \\
+\bottomrule
+\end{tabularx}
+\caption{Uso práctico de las estrategias de validación disponibles.}
+\end{table}
+
+La semilla hace reproducibles las particiones, pero no corrige un diseño
+inadecuado. Si el mismo individuo, lote o serie temporal aparece a ambos lados
+de una partición, el rendimiento puede ser artificialmente optimista.
+
+\section{Ejecución local o remota}
+
+\menu{Esta computadora} usa los recursos locales. \menu{Clúster Slurm} envía el
+contrato estadístico al perfil configurado en
+\menu{Ejecución \texorpdfstring{$\rightarrow$}{ > } Configurar recursos y
+Slurm…}. La elección modifica dónde se ejecuta el trabajo, no su definición
+estadística: Arii utiliza el mismo dataset, especificación JSON y worker R.
+
+\subsection{Datos que debe solicitar al administrador}
+
+Antes de configurar Arii por primera vez, reúna los siguientes datos:
+
+\begin{itemize}
+  \item dirección del servidor de acceso, puerto SSH y nombre de usuario;
+  \item carpeta privada en \code{home}, \code{scratch} o \code{work} donde Arii
+  puede crear sus subdirectorios;
+  \item cuenta Slurm, partición y QOS, si la institución exige esos campos;
+  \item límites razonables de CPU, memoria y tiempo;
+  \item huella SSH oficial del servidor, necesaria para comprobar su identidad;
+  \item ruta de \code{Rscript} en los nodos de cálculo. Si utiliza el runtime de
+  Arii, es la ruta \code{bin/Rscript} indicada al terminar su instalación.
+\end{itemize}
+
+No confunda la \emph{cuenta Slurm} con su usuario o contraseña: normalmente es el
+proyecto institucional al que se imputa el consumo. Partición y QOS pueden
+dejarse vacías cuando el centro proporciona valores predeterminados.
+
+\newpage
+
+\subsection{Crear el perfil remoto por primera vez}
+
+\begin{enumerate}
+  \item Abra \menu{Ejecución \texorpdfstring{$\rightarrow$}{ > } Configurar
+  recursos y Slurm…}.
+  \item Asigne un nombre descriptivo al perfil e ingrese servidor, puerto,
+  usuario y carpeta remota. Esa carpeta debe ser absoluta y pertenecer a su
+  cuenta; Arii creará dentro de ella los directorios de trabajo.
+  \item Complete cuenta, partición y QOS sólo si son requeridos. En
+  \menu{Rscript remoto}, indique la ruta completa del motor instalado en el
+  servidor.
+  \item Mantenga \menu{Clave administrada por Arii} como autenticación recomendada
+  y pulse \menu{Configurar acceso automático con contraseña…}. Arii solicitará la
+  contraseña una sola vez para instalar una clave pública Ed25519.
+  \item Cuando aparezca la huella SHA-256 del servidor, compárela con la
+  informada por la institución. No la acepte si no puede verificarla.
+  \item Tras instalar la clave, Arii comprueba inmediatamente un nuevo ingreso
+  sin contraseña. La contraseña original no se guarda; el secreto de la clave se
+  protege mediante el almacén de credenciales del sistema operativo.
+  \item Defina CPU por trabajo, memoria, tiempo máximo y, para permutaciones,
+  cantidad máxima de nodos. Comience con una solicitud moderada acorde a las
+  reglas del centro.
+  \item Pulse \menu{Validar y previsualizar}. Esta acción comprueba que los
+  campos formen un perfil válido y muestra el script \code{sbatch} que se
+  generaría; no reserva recursos ni envía todavía un trabajo.
+  \item Pulse \menu{Guardar}. En la ventana principal, cambie
+  \menu{Ejecutar en} a \menu{Clúster Slurm} y realice primero un análisis
+  pequeño para verificar transferencia, cola, ejecución y recuperación.
+\end{enumerate}
+
+El perfil y los recursos se guardan en la configuración local del usuario, no en
+el proyecto \code{.arii}. Las contraseñas, claves privadas y credenciales tampoco
+se incorporan a los proyectos. Las opciones OpenSSH, alias SSH y Pageant/PuTTY
+quedan disponibles para usuarios que ya administran esos mecanismos.
+
+\subsection{Elegir recursos sin sobredimensionar}
+
+Arii puede distribuir folds y permutaciones entre los CPU solicitados. Pedir más
+CPU que tareas independientes no acelera el cálculo. La memoria indicada es el
+límite por trabajo y debe alcanzar para el dataset, los modelos concurrentes y
+un margen para R. El tiempo máximo debe superar la duración estimada; si se
+agota, Slurm termina el trabajo aunque el modelo sea correcto.
+
+Un trabajo enviado puede permanecer \emph{en cola} hasta que haya recursos. Esto
+no es un error de Arii. Si falla, revise primero el mensaje recuperado, la ruta
+de \code{Rscript}, los límites de Slurm y los archivos de log creados en la
+carpeta remota. La guía especializada del clúster amplía estos diagnósticos.
+
+\chapter{PCA}
+
+Ejecute PCA después de incluir al menos tres muestras. La clase no interviene
+en el ajuste: sólo se utiliza para colorear los puntos. Por eso, una separación
+visible entre colores describe estructura presente en $X$, pero no es una
+clasificación ni una prueba de hipótesis.
+
+Revise los resultados en este orden:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Resumen}: número de componentes y $R^2_X$ acumulado.
+  \item \textbf{Varianza}: contribución de cada componente.
+  \item \textbf{Scores}: agrupamientos, tendencias y posibles atípicos.
+  \item \textbf{Loadings}: variables asociadas a cada dirección.
+  \item \textbf{Loading plot}: representación reescalada para interpretación
+  espectral.
+  \item \textbf{Métricas}: $R^2_X$ y RMSE de reconstrucción.
+\end{itemize}
+
+La elipse $T^2$ de Hotelling se activa al 95 o 99 por ciento. Es una referencia
+global y no una prueba de separación entre clases.
+
+\section{Lectura de scores y loadings}
+
+Cada punto del gráfico de scores representa una muestra. Las muestras cercanas
+tienen perfiles semejantes en las componentes mostradas; la distancia visible
+no resume la información descartada en otras componentes. Cambie los ejes X e Y
+para comprobar si una conclusión depende sólo de la primera proyección.
+
+Los loadings indican qué variables contribuyen a cada dirección. Interprételos
+junto con los scores: una variable con loading positivo se asocia con muestras
+proyectadas hacia el lado positivo de esa componente. El signo completo puede
+invertirse entre programas sin cambiar el modelo.
+
+\section{Valores atípicos y exclusiones}
+
+Una muestra alejada merece revisión, no eliminación automática. Compruebe primero calidad instrumental, preparación, metadatos, lote y plausibilidad biológica. Si decide excluirla, desmarque \menu{Incluir}, vuelva a ejecutar y documente el criterio. No seleccione exclusiones sólo porque mejoran la separación esperada.
+
+\chapter{PLS-DA y OPLS-DA}
+
+Todas las muestras incluidas deben tener clase; cada clase necesita al menos dos
+muestras. OPLS-DA admite exactamente dos clases.
+
+PLS-DA busca direcciones de $X$ relacionadas con una representación indicadora
+de la clase. Esa supervisión hace que pueda encontrar separación incluso en datos ruidosos, especialmente cuando hay muchas más variables que muestras. Por eso, la interpretación debe comenzar por la validación y no por los scores.
+
+La opción OPLS-DA de Arii reorganiza un PLS-DA binario en una dirección
+predictiva y direcciones ortogonales. Facilita la lectura de la variación, pero
+no crea nuevas predicciones: las métricas de clasificación son las del PLS-DA
+subyacente.
+
+\section{Selección del modelo}
+
+La pestaña \menu{Selección} compara el error de ajuste con el error CV por número de componentes. Arii propone una complejidad mediante la regla de un error estándar. El usuario puede seleccionar otro modelo; todas las vistas, métricas y permutaciones se actualizan para el modelo actual.
+
+Use el modelo sugerido como punto de partida. La regla de un error estándar favorece el modelo más simple cuyo BER CV permanece dentro de un error estándar del mínimo. La exportación y el test de permutaciones utilizarán el modelo que quede establecido como actual.
+
+\section{Métricas y confusión}
+
+$R^2_Y$ describe ajuste y $Q^2_Y$ la predicción externa interna. BER pondera por clase y es especialmente útil con grupos desbalanceados. La matriz de confusión CV usa únicamente predicciones externas.
+
+Interprete las métricas en conjunto:
+
+\begin{itemize}
+  \item $R^2_Y$ alto con $Q^2_Y$ bajo sugiere ajuste sin generalización.
+  \item Una exactitud alta puede ocultar una clase minoritaria mal predicha;
+  revise BER y la matriz de confusión.
+  \item Un promedio favorable con gran dispersión indica sensibilidad a la
+  partición de los datos.
+  \item Las métricas CV siguen siendo validación interna. La confirmación fuerte
+  requiere muestras independientes o validación anidada.
+\end{itemize}
+
+\section{Curvas de ROC}
+
+La vista ROC compara ajuste y CV por grupo. La respuesta al umbral conserva las
+curvas de sensibilidad y especificidad y marca el umbral CV exploratorio.
+
+La vista de ajuste muestra el comportamiento sobre las mismas muestras usadas
+para estimar el modelo; la vista CV utiliza respuestas externas y es la
+referencia apropiada para discutir rendimiento interno. El umbral marcado
+maximiza el índice de Youden y se ofrece para exploración, no para tomar una
+decisión diagnóstica.
+
+\chapter{Loadings, Loading plot y STOCSY}
+
+\section{Navegación}
+
+En Loading plot, la rueda controla el zoom vertical, \code{Ctrl+rueda} el zoom
+horizontal, \code{Shift+rueda} el desplazamiento horizontal y
+\code{Alt+rueda} el desplazamiento vertical. El arrastre sobre los ejes desplaza
+el eje correspondiente; el área del gráfico queda reservada para seleccionar un
+punto de pivote para el STOCSY.
+
+El loading estándar y el Loading plot responden preguntas relacionadas pero no
+idénticas. El primero muestra el vector del modelo; el segundo aplica un
+reescalado dependiente del preprocesamiento para recuperar una forma más próxima
+a la magnitud de las variables originales. Use el color para conservar el signo
+del loading y la altura para inspeccionar el valor reescalado.
+
+\section{STOCSY}
+
+Active STOCSY con \tecla{S} o en el botón <<S-TOCSY(S)>> de la pestaña \menu{Loading plot}, use el crosshair para elegir un desplazamiento y haga clic. La ventana emergente muestra el perfil medio y el resultado coloreado por
+correlación. El cálculo usa todas las muestras del dataset cargado, no sólo las
+del modelo visible.
+
+La barra de color se controla mediante sus límites numéricos. \menu{Guardar
+figura} exporta la figura limpia con la geometría actual de la ventana, sin
+capturar botones ni marcos de la interfaz.
+
+El pivote debe presentar variación entre muestras. Correlaciones altas pueden
+deberse al mismo compuesto, covariación biológica, clase, lote o una variable de
+confusión. STOCSY orienta la exploración, pero no identifica por sí solo una
+molécula ni establece causalidad.
+
+\chapter{Tests de permutaciones}
+
+Seleccione primero la cantidad de componentes del modelo actual. Después elija
+modo empírico, residual o ambos, cantidad de iteraciones y métrica. Arii fija esa complejidad y compara el resultado observado con respuestas permutadas.
+
+Para un informe definitivo, use suficientes permutaciones para la resolución de
+p deseada.
+
+\section{Lectura del resultado}
+
+La distribución nula muestra qué rendimiento se obtiene al destruir la relación
+entre $X$ y la clase sin cambiar el diseño de validación. El valor $p$ empírico
+incluye la corrección $+1$ y nunca es exactamente cero. Para $B$ permutaciones,
+la resolución mínima es $1/(B+1)$.
+
+Las vistas frente a correlación de Y y la comparación residual son diagnósticos
+complementarios. No constituyen pruebas independientes que puedan elegirse
+según cuál resulte significativa. Cambiar el modelo actual invalida el test
+anterior porque cambia la hipótesis evaluada.
+
+\chapter{Proyectos, exportación y figuras}
+
+\menu{Archivo \texorpdfstring{$\rightarrow$}{ > } Guardar proyecto} crea un
+archivo \code{.arii} con configuración y resultados. El dataset se referencia mediante ruta y SHA-256; manténgalo disponible al reabrir.
+
+El archivo de proyecto conserva configuración, metadatos y resultados, pero no
+duplica la matriz original. Si el dataset se mueve o cambia, la ruta o la huella
+SHA-256 dejan de coincidir. Conserve el dataset, el proyecto y los archivos
+exportados como un conjunto documental.
+
+La opción \menu{Archivo \texorpdfstring{$\rightarrow$}{ > } Exportar datos de
+loadings…} exporta exclusivamente los datos del loading. Su objetivo es permitir
+que esos valores se utilicen en otra plataforma para construir un gráfico de
+valores de carga. No exporta scores, métricas, predicciones ni un informe general
+del análisis.
+
+\section{Qué exportar}
+
+\subsection{Datos de loadings}
+
+Use \tecla{Ctrl+E} o la opción del menú \menu{Archivo} cuando necesite el eje,
+los identificadores, la desviación estándar y los pesos necesarios para recrear
+el Loading plot fuera de Arii. La exportación usa siempre la primera dirección
+del modelo actual: PC1 en PCA, LV1 en PLS-DA y Predictiva en OPLS-DA,
+independientemente de la componente que se encuentre visible. No representa una
+exportación completa del proyecto.
+
+\subsection{Figuras de PyQtGraph}
+
+Las figuras generales se exportan desde el propio gráfico: haga clic derecho,
+elija \menu{Exportar} y seleccione el exportador de imagen de Arii. La
+implementación \menu{Imagen Arii (ancho y alto exactos)} permite editar ancho y
+alto de forma independiente. Antes de generar la imagen, Arii recalcula la
+geometría del título, los ejes y el área de dibujo para las dimensiones
+solicitadas; no se limita a colocar el gráfico visible dentro de un lienzo mayor.
+
+La relación de aspecto final puede diferir de la ventana. Revise las etiquetas,
+la leyenda y el tamaño de texto en la imagen exportada, especialmente si utiliza
+una figura muy ancha o muy alta.
+
+\subsection{Figura de S-TOCSY}
+
+La ventana de S-TOCSY tiene su propio botón \menu{Guardar figura}. Este exporta
+la composición de S-TOCSY sin capturar los botones ni los marcos de la interfaz y
+respeta la geometría actual de la ventana. No es necesario abrir el menú
+contextual de PyQtGraph para esta vista.
+
+Antes de compartir un resultado, compruebe que el modelo actual, la estrategia
+de validación y las muestras incluidas coinciden con lo que desea reportar. La
+figura o el archivo de loadings refleja el estado actual, no todas las decisiones
+exploradas durante la sesión.
+
+\chapter{Solución de problemas y licencia}
+
+\section{Solución de problemas}
+
+\begin{tabularx}{\textwidth}{@{}p{0.31\textwidth}X@{}}
+\toprule
+\textbf{Situación} & \textbf{Comprobación} \\
+\midrule
+El botón no ejecuta & Verifique muestras incluidas, clases mínimas y que no haya
+un trabajo anterior activo. \\
+No se encuentra Rscript & Use el instalador con runtime o configure
+\code{ARII\_RSCRIPT}. \\
+Error remoto & Ejecute la prueba de conexión, verifique partición, CPU, memoria y
+la ruta del runtime. \\
+Resultado distinto entre programas & Compare orientación, muestras, centrado,
+escalado, semilla, particiones CV y complejidad actual. \\
+STOCSY no está disponible & Requiere un perfil continuo con eje numérico válido y
+más de una muestra. \\
+\bottomrule
+\end{tabularx}
+
+\section{Citación, licencia y soporte}
+
+Use la referencia generada desde \code{CITATION.cff} y el DOI específico de la
+versión analizada. El DOI conceptual
+\href{https://doi.org/10.5281/zenodo.23167788}{10.5281/zenodo.23167788} dirige a
+la versión más reciente.
+
+Arii se distribuye bajo GPL-3.0-or-later. Los componentes de terceros conservan
+sus licencias. Los errores reproducibles pueden informarse en
+\url{https://github.com/EXCI5ION/Arii/issues} sin adjuntar datos sensibles.
+
+\appendix
+\chapter{Instalar el motor de Arii en un servidor Slurm}
+
+El paquete de servidor contiene el motor R y sus dependencias; no instala la
+interfaz gráfica. Se ejecuta en un servidor o clúster Linux \code{x86\_64} con
+\code{glibc 2.28} o posterior. La instalación normal se realiza dentro de la
+cuenta del investigador, sin \code{sudo} y sin modificar R, Python o Conda del
+sistema.
+
+Antes de comenzar, confirme que puede iniciar una sesión SSH, que los nodos de
+cálculo comparten la carpeta donde se instalará el runtime y que el centro
+permite ejecutar software desde esa ubicación. El nodo de acceso necesita
+\code{curl} o \code{wget} para la instalación automática.
+
+\section{Instalación automática}
+
+La versión de la aplicación de escritorio y la del runtime del clúster tienen
+ciclos independientes. Arii envía con cada trabajo el worker R correspondiente
+a la aplicación instalada; el runtime remoto aporta R, \code{mixOmics},
+\code{jsonlite} y sus dependencias reproducibles. Por ese motivo, Arii 1.1.0
+continúa utilizando el runtime de clúster 1.0.0 mientras no cambien las
+dependencias ni el contrato de ejecución remota.
+
+Inicie una sesión SSH en el servidor y descargue el instalador de la versión
+vigente del runtime:
+
+\begin{lstlisting}[language=bash]
+ARII_RUNTIME_VERSION=1.0.0
+wget -O install-arii-server.sh \
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RUNTIME_VERSION}/cluster/install-server.sh"
+less install-arii-server.sh
+ARII_VERSION="$ARII_RUNTIME_VERSION" bash install-arii-server.sh
+\end{lstlisting}
+
+La variable externa se llama \code{ARII\_VERSION} porque así la recibe el
+instalador publicado originalmente. En este manual se usa
+\code{ARII\_RUNTIME\_VERSION} para evitar confundirla con la versión de la
+aplicación de escritorio.
+
+La revisión con \code{less} permite inspeccionar el script antes de ejecutarlo.
+Si \code{wget} no está disponible, use:
+
+\begin{lstlisting}[language=bash]
+curl -fLo install-arii-server.sh \
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v1.0.0/cluster/install-server.sh"
+\end{lstlisting}
+
+El instalador comprueba sistema, arquitectura y versión de \code{glibc}; descarga el runtime y su archivo de sumas; verifica SHA-256; extrae el entorno; corrige sus rutas internas con \code{conda-unpack}; y ejecuta una prueba directa de R, \code{mixOmics} y \code{jsonlite}. Por defecto instala en:
+
+\begin{lstlisting}
+$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64
+\end{lstlisting}
+
+Puede elegir otra base absoluta antes de ejecutar:
+
+\begin{lstlisting}[language=bash]
+export ARII_INSTALL_BASE=/scratch/USUARIO/arii/runtime/releases
+ARII_VERSION=1.0.0 bash install-arii-server.sh
+\end{lstlisting}
+
+No use como destino la raíz del sistema ni una carpeta temporal que se elimine
+al cerrar la sesión. Si \code{\$HOME} reside en NFS, la extracción inicial puede
+tardar varios minutos por la cantidad de archivos pequeños; espere el mensaje
+final antes de interrumpirla.
+
+\section{Guardar la ruta de Rscript}
+
+Al finalizar, el instalador imprime una ruta semejante a:
+
+\begin{lstlisting}
+/home/USUARIO/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64/bin/Rscript
+\end{lstlisting}
+
+Copie esa ruta completa. Es el valor que debe ingresar en \menu{Rscript remoto}
+al crear el perfil Slurm de la aplicación de escritorio. No use el
+\code{Rscript} del nodo de acceso salvo que el administrador confirme que esa
+misma ruta y sus paquetes están disponibles en los nodos de cálculo.
+
+\section{Prueba mediante Slurm}
+
+La prueba directa del instalador demuestra que el runtime funciona en el nodo
+de acceso. Para comprobar también los nodos de cálculo, entre en la carpeta
+instalada y envíe el trabajo de salud:
+
+\begin{lstlisting}[language=bash]
+cd "$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64"
+sbatch share/arii/health.sbatch
+\end{lstlisting}
+
+Slurm devolverá un identificador. Puede consultar su estado con
+\code{squeue -j ID}. Cuando termine, el archivo
+\code{arii-runtime-health-ID.json} debe contener \code{"status":"ok"}. Si el
+trabajo falla, revise primero su salida y confirme que la carpeta del runtime es
+visible desde el nodo asignado.
+
+\section{Servidor sin acceso a Internet}
+
+Descargue desde otra computadora el archivo
+\code{Arii-1.0.0-cluster-runtime-linux-x86\_64.tar.gz} y
+\code{SHA256SUMS-cluster-1.0.0.txt} publicados en el release 1.0.0. Transfiéralos a su
+cuenta mediante el mecanismo autorizado por la institución. Ya en el servidor:
+
+\begin{lstlisting}[language=bash]
+sha256sum -c SHA256SUMS-cluster-1.0.0.txt
+mkdir -p "$HOME/arii/runtime/releases"
+tar -xzf Arii-1.0.0-cluster-runtime-linux-x86_64.tar.gz \
+  -C "$HOME/arii/runtime/releases"
+cd "$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64"
+./install-runtime.sh
+\end{lstlisting}
+
+No continúe si la verificación SHA-256 falla. Una instalación compartida en
+\code{/opt} o en el filesystem institucional debe ser realizada por los
+administradores y quedar en modo de sólo lectura para los usuarios.
+
+\section{Conectar el escritorio con el runtime}
+
+Vuelva a Arii y complete el procedimiento de la sección de ejecución remota.
+Indique una carpeta de trabajos separada de la carpeta del runtime, pegue la ruta de \code{Rscript}, configure el acceso SSH y guarde el perfil. La primera prueba desde la interfaz debe ser un cálculo pequeño; sólo después conviene enviar una validación extensa o un test con muchas permutaciones.
+
+\end{document}

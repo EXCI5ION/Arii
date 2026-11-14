@@ -1,4 +1,4 @@
-# Guía inicial para ejecutar Arii en un clúster Slurm
+# Guía para ejecutar Arii en un clúster Slurm
 
 Esta guía está escrita para usuarios que no administran servidores. La interfaz
 de Arii realiza ya este primer flujo y traduce los errores principales a lenguaje
@@ -21,19 +21,18 @@ interfaz muestra estados como *preparando*, *en cola*, *ejecutando*,
 
 ## ¿Hay que guardar scripts en el clúster?
 
-No manualmente. Arii gestionará dos zonas bajo una carpeta elegida por el usuario:
+No manualmente. Arii gestiona dos zonas bajo una carpeta elegida por el usuario:
 
 ```text
 /scratch/usuario/arii/
-├── runtime/             versión de workers y entorno reproducible
+├── runtime/             R y entorno reproducible
 └── jobs/
     └── identificador/   job.json, datos, submit.sbatch, log y result.json
 ```
 
-En la primera implementación se podrá copiar el worker correspondiente dentro
-de cada trabajo. Más adelante Arii podrá reutilizar archivos por huella para no
-volver a transferir datasets grandes. Nunca escribirá fuera de la carpeta remota
-configurada.
+Arii copia el worker correspondiente dentro de cada trabajo. Una ampliación
+futura podrá reutilizar archivos por huella para no volver a transferir datasets
+grandes. Nunca escribe fuera de la carpeta remota configurada.
 
 ## ¿Hay que instalar R?
 
@@ -61,6 +60,10 @@ El usuario lo descomprime una vez en una carpeta versionada, ejecuta
 `install-runtime.sh` y configura la ruta resultante de `bin/Rscript`. Un
 contenedor Apptainer continúa siendo una alternativa futura para instituciones
 que prefieran imágenes administradas.
+
+El runtime remoto tiene un ciclo de versión independiente del escritorio. Arii
+1.1.0 envía sus workers actuales con cada trabajo y continúa utilizando el
+runtime 1.0.0 para proporcionar R, `mixOmics`, `jsonlite` y sus dependencias.
 
 La extracción inicial puede tardar decenas de minutos cuando `$HOME` reside en
 NFS, aunque el archivo comprimido mida bastante menos que el entorno instalado.

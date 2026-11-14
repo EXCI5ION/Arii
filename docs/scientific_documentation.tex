@@ -1,0 +1,471 @@
+% Documentación científica editable de Arii.
+% Compilar dos veces para actualizar el índice, referencias y enlaces.
+\documentclass[11pt,a4paper,openany]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{lmodern,microtype,geometry,graphicx,xcolor}
+\usepackage{amsmath,amssymb,mathtools,booktabs,tabularx}
+\usepackage{enumitem,fancyhdr,titlesec,hyperref,bookmark,csquotes}
+
+\geometry{top=24mm,bottom=23mm,inner=24mm,outer=21mm,headheight=15pt}
+\definecolor{AriiNavy}{HTML}{071B3A}
+\definecolor{AriiBlue}{HTML}{087DD1}
+\definecolor{AriiCyan}{HTML}{11C6DF}
+\definecolor{AriiViolet}{HTML}{7C3AED}
+\definecolor{AriiMagenta}{HTML}{D946EF}
+\definecolor{AriiGray}{HTML}{46566A}
+\newcommand{\AriiVersion}{1.1.0}
+\newcommand{\mixOmics}{\textit{mixOmics}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\RtwoX}{R^{2}_{X}}
+\newcommand{\RtwoY}{R^{2}_{Y}}
+\newcommand{\QtwoY}{Q^{2}_{Y}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\IfFileExists{../assets/branding/readme-header-light.png}
+  {\newcommand{\AriiHeader}{../assets/branding/readme-header-light.png}}
+  {\IfFileExists{assets/branding/readme-header-light.png}
+    {\newcommand{\AriiHeader}{assets/branding/readme-header-light.png}}
+    {\newcommand{\AriiHeader}{readme-header-light.png}}}
+
+\hypersetup{colorlinks=true,linkcolor=AriiBlue,urlcolor=AriiViolet,
+  citecolor=AriiMagenta,pdftitle={Arii -- Documentación científica},
+  pdfauthor={Gabriel Anderson}}
+\setlist[itemize]{leftmargin=6mm,itemsep=2pt,topsep=4pt}
+\setlist[enumerate]{leftmargin=7mm,itemsep=3pt,topsep=4pt}
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{2}
+\titleformat{\chapter}[display]{\normalfont\bfseries\color{AriiNavy}}
+  {\color{AriiBlue}\Large\chaptername\ \thechapter}{4pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{35pt}{24pt}
+\titleformat{\section}{\normalfont\Large\bfseries\color{AriiNavy}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{AriiNavy}}{\thesubsection}{0.7em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{AriiGray}{Arii}}
+\fancyhead[R]{\small\textcolor{AriiGray}{\nouppercase{\leftmark}}}
+\fancyfoot[C]{\small\textcolor{AriiGray}{\thepage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyfoot[C]{\small\textcolor{AriiGray}{\thepage}}
+  \renewcommand{\headrulewidth}{0pt}
+}
+\raggedbottom
+
+\begin{document}
+\begin{titlepage}
+  \centering\vspace*{13mm}
+  \includegraphics[width=0.92\textwidth]{\AriiHeader}
+  \vspace{22mm}
+  {\Huge\bfseries\color{AriiNavy} Documentación científica de Arii\par}
+  \vspace{8mm}
+  {\Large\color{AriiGray}Fundamentos, implementación, validación y limitaciones\par}
+  \vfill
+  {\large Gabriel Anderson\par}\vspace{3mm}
+  {\large Arii \AriiVersion\par}\vspace{15mm}
+\end{titlepage}
+
+\pagenumbering{roman}
+\pdfbookmark[0]{Índice general}{toc}
+\tableofcontents\clearpage\pagenumbering{arabic}
+
+\chapter{Alcance y principio de diseño}
+
+Arii implementa un flujo trazable para el análisis de una matriz ómica mediante
+PCA, PLS-DA y una representación OPLS-DA binaria. La aplicación separa tres
+niveles que no deben confundirse: el tratamiento técnico anterior a la matriz,
+el preprocesamiento estadístico aprendido por el modelo y la presentación de los
+resultados.
+
+Los modelos base se calculan con \href{https://mixomics.org/}{mixOmics}. Arii añade el contrato de datos, la
+validación agrupada, la selección de complejidad, diagnósticos, persistencia y una
+transformación ortogonal propia del espacio latente para la vista OPLS-DA. Esta
+última se documenta explícitamente porque no equivale a llamar a una función
+OPLS-DA nativa de \mixOmics.
+
+El documento describe qué calcula la versión \AriiVersion, qué supuestos exige y
+qué conclusiones no permite. No reemplaza el criterio analítico específico de
+RMN, GC/LC-MS, proteómica, transcriptómica o genómica.
+
+\chapter{Contrato de datos y preprocesamiento}
+\section{Matriz y metadatos}
+El núcleo trabaja con
+\begin{equation}
+  \vect{X}\in\mathbb{R}^{n\times p},
+\end{equation}
+donde $n$ es el número de muestras y $p$ el número de variables. El eje ppm o
+los identificadores son metadatos de variables; clase e individuo son
+metadatos de muestras. El vector ppm nunca se incorpora como predictor.
+
+El importador acepta las orientaciones \emph{variables por muestras} y
+\emph{muestras por variables}, pero el motor siempre recibe $\vect{X}$ con la
+forma anterior. La orientación se propone a partir de identificadores y
+dimensiones; que una propuesta sea sintácticamente plausible no garantiza que
+sea experimentalmente correcta. El usuario debe verificar nombres y
+dimensiones antes de modelar.
+
+Arii distingue un perfil continuo de una tabla de características. En el primer
+caso existe un eje numérico y ordenado cuya vecindad tiene significado; en el
+segundo, el orden de las variables no implica continuidad. Esta distinción
+modifica la representación gráfica y la disponibilidad de STOCSY, pero no altera
+la forma matricial del ajuste.
+
+Las matrices deben llegar con el tratamiento técnico pertinente ya realizado:
+normalización, alineamiento, corrección de deriva o lote, filtrado de calidad e
+imputación cuando correspondan. Un cero analítico, una ausencia de detección y
+un valor faltante no son equivalentes.
+
+Cuando existe un identificador de individuo, éste define la unidad de
+remuestreo: sus réplicas permanecen juntas en entrenamiento o validación.
+
+El motor rechaza valores ausentes, infinitos o no numéricos. Arii no imputa de
+forma automática porque la ausencia de detección, un cero analítico y un valor
+faltante tienen significados diferentes según la plataforma. También elimina del
+ajuste las variables con desviación estándar nula o numéricamente degenerada y
+registra cuántas fueron excluidas.
+
+\section{Centrado y escalado}
+Sea $x_{ij}$ el valor de la variable $j$ en la muestra $i$, $\bar{x}_{j}$ su
+media y $s_j$ su desviación estándar muestral. Arii ofrece:
+\begin{align}
+  x^{\mathrm{Pareto}}_{ij} &= \frac{x_{ij}-\bar{x}_{j}}{\sqrt{s_j}}, \\
+  x^{\mathrm{UV}}_{ij} &= \frac{x_{ij}-\bar{x}_{j}}{s_j}, \\
+  x^{\mathrm{centrado}}_{ij} &= x_{ij}-\bar{x}_{j}.
+\end{align}
+En validación supervisada, $\bar{x}_{j}$ y $s_j$ se estiman exclusivamente en
+el entrenamiento y se aplican al conjunto externo para evitar fuga de
+información.
+
+Pareto reduce la influencia de las variables de gran escala sin igualarlas por
+completo; el escalado de varianza unitaria concede un peso comparable a todas
+las variables no constantes y puede amplificar ruido de pequeña varianza. La
+opción centrada conserva las diferencias originales de escala. Ninguna elección
+es universal: debe justificarse en relación con la plataforma y el objetivo.
+
+\chapter{Análisis de componentes principales}
+PCA aproxima la matriz centrada y escalada mediante
+\begin{equation}
+  \vect{X}=\vect{T}\vect{P}^{\mathsf T}+\vect{E},
+\end{equation}
+donde $\vect{T}$ contiene los scores, $\vect{P}$ los loadings y $\vect{E}$ los
+residuos. Para $a$ componentes:
+\begin{equation}
+  \widehat{\vect{X}}_{a}=\vect{T}_{a}\vect{P}_{a}^{\mathsf T}.
+\end{equation}
+Arii informa
+\begin{align}
+  \mathrm{RMSE}_{X,a} &= \sqrt{\frac{1}{np}\sum_{i=1}^{n}\sum_{j=1}^{p}
+    \left(x_{ij}-\widehat{x}_{ij,a}\right)^2}, \\
+  \RtwoX(a) &= 1-\frac{\mathrm{SSE}_{X,a}}{\mathrm{TSS}_{X}}.
+\end{align}
+Son métricas descriptivas calculadas sobre las observaciones de ajuste; no son
+rendimiento predictivo externo ni validan por sí solas el número de componentes.
+
+Los scores son las coordenadas de las muestras en el espacio latente y los
+loadings describen la dirección de cada componente en el espacio de variables.
+La clase no interviene en el ajuste, aunque puede utilizarse para colorear la
+figura. Por tanto, una agrupación visual por clase es un resultado descriptivo y
+no una clasificación supervisada.
+
+La cantidad máxima de componentes queda limitada por
+$\min(n-1,p)$. Arii informa la fracción de variación de $\vect{X}$ explicada por
+cada componente y su acumulado. Un aumento de $\RtwoX$ al añadir componentes es
+esperable incluso si esas direcciones recogen ruido; por eso no existe un umbral
+universal de varianza acumulada que valide el modelo.
+
+\chapter{PLS-DA y OPLS-DA}
+\section{PLS-DA}
+PLS-DA relaciona $\vect{X}$ con una matriz indicadora
+$\vect{Y}\in\{0,1\}^{n\times g}$ mediante variables latentes que maximizan su
+covarianza. Arii ajusta \code{mixOmics::plsda} y asigna la clase mediante
+\code{max.dist}. Las respuestas continuas se conservan para $\RtwoY$, $\QtwoY$, curvas de ROC y análisis de umbral.
+
+La bondad de ajuste del modelo completo es
+\begin{equation}
+  \RtwoY = 1-\frac{\sum_i\lVert\vect{y}_i-\widehat{\vect{y}}_i\rVert^2}
+  {\sum_i\lVert\vect{y}_i-\bar{\vect{y}}\rVert^2},
+\end{equation}
+y la capacidad predictiva interna utiliza predicciones externas:
+\begin{equation}
+  \QtwoY = 1-\frac{\mathrm{PRESS}_{Y}}{\mathrm{TSS}_{Y,\mathrm{CV}}}.
+\end{equation}
+Arii distingue siempre ajuste y CV. El primero aplica el modelo completo sobre
+las mismas observaciones que lo estimaron y es descriptivo y potencialmente
+optimista. El segundo agrega exclusivamente predicciones de muestras externas a
+cada ajuste y aproxima rendimiento interno fuera de fold.
+
+En $\QtwoY$, PRESS suma los errores externos. El denominador se centra respecto
+de las proporciones de clase aprendidas en cada entrenamiento, evitando usar
+información del conjunto externo para definir la referencia. Un valor alto no
+garantiza transferencia a otro estudio: las particiones siguen procediendo del
+mismo conjunto experimental.
+
+\section{Clasificación y error balanceado}
+\begin{align}
+  \mathrm{Accuracy} &= \frac{1}{n}\sum_{i=1}^{n}
+    \mathbb{I}(y_i=\widehat{y}_i), \\
+  \mathrm{BER} &= \frac{1}{g}\sum_{k=1}^{g}\frac{\mathrm{FN}_{k}}{n_k}.
+\end{align}
+BER otorga el mismo peso a cada clase y es preferible cuando los tamaños de los
+grupos difieren.
+
+Arii agrega una matriz de confusión con predicciones externas y calcula AUC
+one-vs-rest a partir de las respuestas continuas. La AUC macro es la media no
+ponderada de las AUC por clase, por lo que cada grupo contribuye por igual. Las
+métricas deben interpretarse conjuntamente: exactitud y AUC pueden ocultar una
+clase con baja sensibilidad, mientras que BER resume el error medio por clase.
+
+\newpage
+
+\section{OPLS-DA}
+Arii transforma un PLS-DA binario calculado con \mixOmics. Para un modelo de
+$a$ variables latentes, toma sus scores originales $\vect{T}_a$ y la respuesta
+continua predicha para la segunda clase. Tras centrar y normalizar esa respuesta,
+obtiene una base predictiva unitaria $\vect{q}_p$. El residuo de los scores es
+
+\begin{equation}
+  \vect{T}_{\perp}=\vect{T}_a-
+  \vect{q}_p\vect{q}_p^{\mathsf T}\vect{T}_a.
+\end{equation}
+
+Una descomposición QR de $\vect{T}_{\perp}$ produce hasta $a-1$ direcciones
+ortogonales. Las bases se reescalan con la norma de los scores originales y los
+loadings se reestiman por mínimos cuadrados:
+
+\begin{equation}
+  \vect{P}_{\mathrm{rot}}^{\mathsf T}=
+  (\vect{T}_{\mathrm{rot}}^{\mathsf T}\vect{T}_{\mathrm{rot}})^{-1}
+  \vect{T}_{\mathrm{rot}}^{\mathsf T}\vect{X}.
+\end{equation}
+
+La rotación no reajusta la respuesta y no cambia $\RtwoY$, $\QtwoY$, BER,
+confusión, ROC ni las predicciones. Las componentes ortogonales describen
+variación de $\vect{X}$ no asociada directamente con $\vect{Y}$ y no deben
+interpretarse como biomarcadores discriminantes.
+
+La rotación se calcula por separado para cada complejidad candidata. Por ello,
+\emph{Ortogonal 1} de un modelo de dos componentes no debe asumirse idéntica a
+\emph{Ortogonal 1} de un modelo de tres. Esta implementación es una vista
+ortogonalizada y transparente del PLS-DA binario; no pretende reproducir de
+forma bit a bit un algoritmo propietario ni una implementación OPLS externa.
+
+\chapter{Validación cruzada y selección}
+\section{Random subsets repetido}
+La configuración predeterminada ejecuta $R=20$ repeticiones de $K=5$ folds
+estratificados:
+\begin{equation}
+  N_{\mathrm{submodelos}}=R\times K=100.
+\end{equation}
+La fracción teórica por submodelo es 80/20, con variaciones por redondeo,
+balance de clase o agrupación de individuos. Cada unidad recibe una predicción
+externa por repetición.
+
+La estratificación se realiza sobre unidades de remuestreo. Si existe un
+identificador biológico, todas sus réplicas comparten fold; si no existe, cada
+muestra es una unidad. Una clase debe contener al menos tantas unidades
+independientes como folds. Arii registra la fracción externa efectiva, que puede
+diferir del valor teórico cuando las unidades tienen distinto número de réplicas.
+
+\section{Otros esquemas}
+En \textbf{Monte Carlo}, cada iteración genera una partición aleatoria
+estratificada independiente; Arii registra su cobertura efectiva.
+\textbf{Leave-one-out} retira una unidad de remuestreo por submodelo, o el grupo
+completo si existen individuos. \textbf{Venetian blinds} distribuye
+sistemáticamente unidades ordenadas y sólo es defendible si el orden no codifica
+clase, lote o deriva de forma favorable.
+
+Estas estrategias estiman propiedades distintas y no son intercambiables por
+conveniencia. Monte Carlo puede dejar algunas unidades menos representadas como
+externas; leave-one-out utiliza conjuntos de entrenamiento muy semejantes y
+puede presentar alta varianza; Venetian blinds depende de que el orden original
+no introduzca información espuria.
+
+Toda operación aprendida a partir de $\vect{X}$ debe ocurrir dentro del fold.
+Arii aplica este principio al centrado, escalado y eliminación de variables
+constantes. El filtrado supervisado, la imputación o la corrección de lote hecha
+con el dataset completo antes de la validación pueden seguir produciendo fuga de
+información aunque el motor de Arii procese correctamente sus folds.
+
+\section{Selección de complejidad}
+Sea $\overline{e}_{a}$ el BER CV medio y $\mathrm{SE}_{a}$ su error estándar. Si
+$a_{\min}$ minimiza BER, Arii sugiere el menor $a$ que satisface
+\begin{equation}
+  \overline{e}_{a}\leq
+  \overline{e}_{a_{\min}}+\mathrm{SE}_{a_{\min}}.
+\end{equation}
+Es una selección exploratoria. Una estimación final sin sesgo requiere
+validación anidada o una cohorte externa.
+
+Arii separa la \textbf{sugerencia} del \textbf{modelo actual}. Al terminar, la
+sugerencia inicial se adopta como modelo actual, pero el usuario puede elegir
+otra complejidad. Scores, loadings, confusión, ROC, exportación y permutaciones
+se refieren al modelo actual; las métricas de los candidatos permanecen para
+comparación. Esta distinción evita presentar una decisión manual como si fuera el
+resultado automático de la regla.
+
+\chapter{Resultados gráficos}
+\section{Scores y T\texorpdfstring{$^2$}{2} de Hotelling}
+Para una representación bidimensional con $q=2$ y $n$ observaciones:
+\begin{equation}
+  T^2_{\alpha}=\frac{q(n-1)}{n-q}F_{\alpha}(q,n-q).
+\end{equation}
+La elipse representa una región global de scores; no es un intervalo por clase
+ni demuestra separación estadística.
+
+La expresión se aplica a la proyección bidimensional visible y presupone una
+estructura aproximadamente elíptica. Un punto fuera del límite es una señal para
+revisión analítica, no evidencia automática de error ni autorización para excluir
+la muestra.
+
+\section{Loadings y gráfico de valores de carga}
+El Loading plot aplica un reescalado dependiente del preprocesamiento:
+\begin{align}
+  v_{jk}^{\mathrm{Pareto}} &= \sqrt{s_j}\,p_{jk}, \\
+  v_{jk}^{\mathrm{UV}} &= s_j\,p_{jk}, \\
+  v_{jk}^{\mathrm{centrado}} &= p_{jk}.
+\end{align}
+El eje vertical representa $v_{jk}$ y el color el loading original con signo.
+En RMN el eje ppm se dibuja descendente. El signo de una componente latente es
+indeterminado y puede invertirse junto con sus scores sin alterar el modelo.
+
+Para tablas de características Arii no conecta variables adyacentes con una
+curva, porque esa continuidad sería artificial. Para perfiles numéricos sí
+conserva la geometría del eje y, en RMN, lo dibuja en orden descendente.
+
+\section{Curvas de ROC y umbral}
+El AUC macro one-vs-rest es
+\begin{equation}
+  \mathrm{AUC}_{\mathrm{macro}}=\frac{1}{g}\sum_{k=1}^{g}\mathrm{AUC}_k.
+\end{equation}
+El umbral exploratorio maximiza el índice de Youden
+\begin{equation}
+  J(c)=\mathrm{Sensibilidad}(c)+\mathrm{Especificidad}(c)-1.
+\end{equation}
+No recalcula las métricas ni constituye un umbral clínicamente validado.
+
+Las curvas se calculan por separado para el ajuste completo y para la media de
+las respuestas externas disponibles por muestra. Esta separación evita que una
+curva de ajuste optimista se presente como rendimiento validado.
+
+\chapter{Tests de permutaciones}
+Las etiquetas se permutan entre unidades intercambiables, manteniendo juntas las
+réplicas de un individuo y los tamaños de clase. Los folds se reutilizan; como
+$\vect{X}$ no cambia, también se reutilizan transformaciones permitidas.
+
+La intercambiabilidad es un supuesto científico. Si existen bloques, pares,
+familias, centros o series temporales, la permutación debe respetar esa
+estructura. Informar un identificador de individuo protege réplicas del mismo
+sujeto, pero no modela automáticamente todos los diseños experimentales posibles.
+
+Para una estadística cuyo valor alto favorece el modelo:
+\begin{equation}
+  p_{\mathrm{emp}}=\frac{1+b}{B+1},
+\end{equation}
+donde $B$ es el número de permutaciones y $b$ los valores nulos al menos tan
+extremos como el observado. La cola es superior para $\RtwoY$, $\QtwoY$ y AUC,
+e inferior para BER. La resolución mínima es
+\begin{equation}
+  p_{\min}=\frac{1}{B+1}.
+\end{equation}
+La comparación residual y las gráficas frente a correlación de Y son
+diagnósticos complementarios; no sustituyen el p empírico.
+
+La complejidad permanece fija en la del modelo actual. Esto responde a la
+pregunta: «¿un modelo con esta complejidad supera lo esperable bajo etiquetas
+intercambiadas?». No corrige el optimismo de haber elegido esa complejidad con
+los mismos datos. Una prueba que incluyera selección completa dentro de cada
+permutación respondería una pregunta diferente y tendría un coste mayor.
+
+En la comparación residual, la unidad del contraste es la muestra y su referencia
+es el error medio de esa muestra bajo las permutaciones. Wilcoxon, la prueba de
+signos y el test $t$ por aleatorización son diagnósticos relacionados; no deben
+tratarse como tres oportunidades independientes de declarar significancia.
+
+\chapter{STOCSY}
+Sea $\vect{x}_{d}$ la variable pivote y $\vect{x}_{j}$ cualquier otra variable:
+\begin{align}
+  \operatorname{cov}(\vect{x}_{d},\vect{x}_{j}) &=
+  \frac{1}{n-1}\sum_{i=1}^{n}(x_{id}-\bar{x}_{d})(x_{ij}-\bar{x}_{j}), \\
+  r_{dj} &= \frac{\operatorname{cov}(\vect{x}_{d},\vect{x}_{j})}{s_d s_j}.
+\end{align}
+El perfil vertical representa covarianza y el color correlación. Arii usa todas
+las muestras del dataset cargado, no sólo las del modelo visible. Una asociación
+puede reflejar el mismo metabolito, covariación biológica, clase, lote o
+confusión; STOCSY no demuestra causalidad ni identifica por sí solo un compuesto.
+
+La selección gráfica se asigna a la variable cuyo eje es más cercano al punto
+elegido. Si la variable pivote no presenta variación entre muestras, la
+correlación no está definida y Arii rechaza el cálculo. El uso del dataset
+completo aumenta el tamaño muestral, pero también significa que una selección de
+muestras del modelo no restringe STOCSY.
+
+\chapter{Ejecución y reproducibilidad}
+El mismo worker R y especificación JSON se utilizan localmente y en Slurm. Las
+validaciones y permutaciones independientes pueden distribuirse sin cambiar el
+contrato estadístico. La GPU no participa actualmente y Arii no la consulta.
+
+El worker, la especificación JSON y el resultado forman el límite reproducible
+entre la interfaz y el motor. La ejecución paralela distribuye folds o
+permutaciones independientes; las semillas se derivan de forma determinista
+para que cambiar la cantidad de CPU no cambie la secuencia científica esperada.
+
+Un proyecto \code{.arii} conserva configuración y resultados, pero referencia el
+dataset mediante ruta y SHA-256 en lugar de incorporarlo. Esta decisión evita
+duplicar matrices grandes o sensibles, a costa de exigir que el archivo original
+permanezca disponible y sin modificaciones.
+
+Un informe reproducible debe conservar dataset y huella, muestras, clases e
+individuos, pretratamiento, centrado/escalado, modelo y complejidad, método CV,
+semilla, unidad de remuestreo, versiones, métricas externas, permutaciones,
+advertencias y validación independiente disponible.
+
+\chapter{Limitaciones y uso responsable}
+
+Los modelos con $p\gg n$ son especialmente vulnerables al sobreajuste. Ninguna
+separación visual, $\RtwoY$ alto o prueba de permutación sustituye diseño
+experimental, control de calidad, plausibilidad biológica y validación externa.
+
+Arii no realiza actualmente imputación, corrección de lote, selección dispersa de
+variables ni validación anidada. Si esos pasos se realizan antes de Arii usando
+información de clase o del dataset completo, el rendimiento CV puede quedar
+sesgado. El programa tampoco transforma automáticamente conteos,
+composiciones o datos de célula única a una geometría apropiada.
+
+La vista OPLS-DA es una rotación documentada del PLS-DA binario de Arii. Debe
+citarse y describirse como tal; no corresponde atribuirle propiedades de una
+implementación OPLS distinta. Del mismo modo, el umbral de Youden, la elipse de
+Hotelling y STOCSY son ayudas exploratorias, no decisiones clínicas ni pruebas
+de identificación molecular.
+
+\begin{thebibliography}{9}
+\bibitem{rohart2017} Rohart F, Gautier B, Singh A, Lê Cao K-A.
+mixOmics: An R package for 'omics feature selection and multiple data integration.
+\emph{PLoS Computational Biology}. 2017;13(11):e1005752.
+\href{https://doi.org/10.1371/journal.pcbi.1005752}{doi:10.1371/journal.pcbi.1005752}.
+
+\bibitem{wiklund2008} Wiklund S, Johansson E, Sjöström L, et al.
+Visualization of GC/TOF-MS-based metabolomics data for identification of
+biochemically interesting compounds using OPLS class models.
+\emph{Analytical Chemistry}. 2008;80:115--122.
+\href{https://doi.org/10.1021/ac0713510}{doi:10.1021/ac0713510}.
+
+\bibitem{trygg2002} Trygg J, Wold S.
+Orthogonal projections to latent structures (O-PLS).
+\emph{Journal of Chemometrics}. 2002;16(3):119--128.
+\href{https://doi.org/10.1002/cem.695}{doi:10.1002/cem.695}.
+
+\bibitem{westerhuis2008} Westerhuis JA, Hoefsloot HCJ, Smit S, et al.
+Assessment of PLSDA cross validation.
+\emph{Metabolomics}. 2008;4(1):81--89.
+\href{https://doi.org/10.1007/s11306-007-0099-6}{doi:10.1007/s11306-007-0099-6}.
+
+\bibitem{cloarec2005} Cloarec O, Dumas M-E, Craig A, et al.
+Statistical total correlation spectroscopy: an exploratory approach for latent
+biomarker identification from metabolic $^1$H NMR data sets.
+\emph{Analytical Chemistry}. 2005;77:1282--1289.
+\href{https://doi.org/10.1021/ac048630x}{doi:10.1021/ac048630x}.
+\end{thebibliography}
+\end{document}

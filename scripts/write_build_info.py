@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from check_release_version import declared_versions
+from check_release_version import declared_cluster_versions, declared_versions
 
 
 def _git(project_root: Path, *arguments: str, required: bool = True) -> str | None:
@@ -40,6 +40,10 @@ def main() -> int:
     if len(unique_versions) != 1:
         raise RuntimeError("Las versiones declaradas de Arii no coinciden")
     version = unique_versions.pop()
+    cluster_versions = set(declared_cluster_versions(project_root).values())
+    if len(cluster_versions) != 1:
+        raise RuntimeError("Las versiones declaradas del runtime de clúster no coinciden")
+    cluster_runtime_version = cluster_versions.pop()
     commit = _git(project_root, "rev-parse", "HEAD")
     status = _git(project_root, "status", "--porcelain") or ""
     dirty = bool(status)
@@ -58,6 +62,7 @@ def main() -> int:
         "schema_version": "1.0",
         "application": "Arii",
         "version": version,
+        "cluster_runtime_version": cluster_runtime_version,
         "git_commit": commit,
         "git_tag": tag,
         "source_tree_clean": not dirty,

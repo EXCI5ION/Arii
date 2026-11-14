@@ -1,5 +1,5 @@
 #define MyAppName "Arii"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Gabriel Anderson"
 #define MyAppExeName "Arii.exe"
 
@@ -9,6 +9,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\Arii
+DisableDirPage=no
 DefaultGroupName=Arii
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -20,8 +21,11 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; The bundled application and R runtime are x64. Windows 11 on Arm can run
+; both through its x64 compatibility layer; x64compatible deliberately admits
+; that platform without claiming that this is a native Arm64 build.
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=..\..\LICENSE
 InfoAfterFile=..\..\THIRD_PARTY_NOTICES.md
 

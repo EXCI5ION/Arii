@@ -18,3 +18,7 @@ results/
 cluster/smoke/*
 !cluster/smoke/submit.sbatch
 *.spec.local
+*.tex
+!docs/main.tex
+!docs/scientific_documentation.tex
+tmp/

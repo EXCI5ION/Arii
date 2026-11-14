@@ -1,4 +1,4 @@
-# Contrato científico inicial
+# Contrato científico de implementación
 
 ## Matriz y metadatos
 
@@ -48,7 +48,9 @@ los resultados.
 
 ## Motores
 
-- `mixOmics`: PCA, PLS-DA y OPLS-DA.
+- `mixOmics`: ajuste base de PCA y PLS-DA.
+- Arii: rotación documentada del espacio latente del PLS-DA binario para la
+  vista OPLS-DA.
 
 La aplicación no expone objetos internos de esos paquetes como contrato público.
 
@@ -68,13 +70,20 @@ supervisados, `biological_id` define la unidad de remuestreo cuando está
 informado: todas las réplicas del mismo individuo permanecen en el mismo fold.
 Un identificador biológico no puede pertenecer a más de una clase.
 
-## Artefactos exportados
+## Artefactos y exportación
 
-Los CSV son artefactos numéricos primarios y no se reconstruyen desde imágenes.
-Las fracciones de varianza se exportan tanto en proporción como en porcentaje.
-El manifiesto registra la huella del dataset y la configuración del análisis. Las
-figuras representan el estado visual elegido por el usuario y se ofrecen en un
-formato raster de alta resolución y otro vectorial.
+El proyecto `.arii` conserva la configuración y el resultado JSON completo del
+modelo, pero no es un paquete de publicación y no incorpora el dataset ni las
+figuras. La opción visible **Exportar datos de loadings…** produce únicamente un
+CSV con eje o identificador, desviación estándar y pesos de la primera dirección
+del modelo actual: PC1 en PCA, LV1 en PLS-DA y Predictiva en OPLS-DA.
+
+Las figuras generales se exportan desde PyQtGraph y representan el estado visual
+elegido por el usuario. El exportador de imagen de Arii permite fijar ancho y alto
+de forma independiente. S-TOCSY dispone de una exportación propia que compone sus
+dos paneles sin capturar los controles. Las funciones internas de exportación
+numérica completa y de informes Markdown no forman parte de la GUI actual y no
+se consideran contrato público.
 
 ## Test de permutaciones
 
