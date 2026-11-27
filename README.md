@@ -20,8 +20,8 @@
   <a href="https://github.com/EXCI5ION/Arii/releases/latest">
     <img src="https://img.shields.io/github/v/release/EXCI5ION/Arii?label=Descargar&amp;logo=github&amp;color=2ea44f" alt="Descargar la última versión">
   </a>
-  <a href="https://doi.org/10.5281/zenodo.23167788">
-    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.23167788.svg" alt="DOI">
+  <a href="https://doi.org/10.5281/zenodo.24575392">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.24575392.svg" alt="DOI">
   </a>
 </p>
 
@@ -172,10 +172,10 @@ Los metadatos de autoría y versión se encuentran en
 [`CITATION.cff`](CITATION.cff). GitHub puede generar desde ese archivo una
 referencia en formatos APA y BibTeX.
 
-Hasta que Zenodo asigne el DOI específico de Arii 1.2.0, `CITATION.cff` utiliza
-el DOI conceptual
-[`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788), que
-representa el proyecto Arii y dirige siempre a su versión más reciente.
+Para citar Arii 1.2.0, utilice el DOI específico
+[`10.5281/zenodo.24575392`](https://doi.org/10.5281/zenodo.24575392). El DOI
+conceptual [`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788)
+representa el conjunto de todas las versiones y dirige siempre a la más reciente.
 
 ## Licencia
 
