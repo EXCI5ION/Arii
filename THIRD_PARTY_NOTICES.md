@@ -15,6 +15,7 @@ licencia incluidos con cada componente.
   en la distribución.
 - **R:** GPL-2.0 y/o GPL-3.0; el runtime conserva `COPYING` y sus avisos.
 - **mixOmics:** GPL (>= 2).
+- **pls:** GPL-2; Arii utiliza `pls::simpls.fit` para su motor SIMPLS.
 - **jsonlite y restantes paquetes R:** el manifiesto del runtime enumera versión
   y licencia; cada directorio de paquete conserva `DESCRIPTION`, `LICENSE` y
   demás avisos suministrados por sus autores.
@@ -29,3 +30,4 @@ Fuentes y código correspondiente:
 - https://github.com/jaraco/keyring
 - https://cran.r-project.org/sources.html
 - https://git.bioconductor.org/packages/mixOmics
+- https://github.com/khliland/pls

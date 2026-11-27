@@ -12,6 +12,11 @@ KNOWN_WORKERS = {
     "permutation_worker.R",
 }
 
+WORKER_SUPPORT_FILES = {
+    "plsda_worker.R": ("pls_engine.R",),
+    "permutation_worker.R": ("pls_engine.R",),
+}
+
 
 def bundle_root() -> Path:
     """Root containing PyInstaller data or the source checkout."""
@@ -37,6 +42,19 @@ def worker_path(name: str) -> Path:
     if not path.is_file():
         raise FileNotFoundError(f"No se encontró el worker R: {path}")
     return path
+
+
+def worker_support_paths(name: str) -> tuple[Path, ...]:
+    """Return support files that must travel beside a worker."""
+
+    if name not in KNOWN_WORKERS:
+        raise ValueError(f"worker R desconocido: {name}")
+    root = bundle_root() / "r"
+    paths = tuple(root / filename for filename in WORKER_SUPPORT_FILES.get(name, ()))
+    missing = [path for path in paths if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"No se encontró el recurso R: {missing[0]}")
+    return paths
 
 
 def asset_path(name: str) -> Path:

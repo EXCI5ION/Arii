@@ -1,5 +1,36 @@
 # Historial de cambios
 
+## 1.2.0 - 2026-11-26
+
+- incorpora dos motores completos y seleccionables para PLS-DA y OPLS-DA:
+  `mixOmics` y SIMPLS mediante `pls::simpls.fit`;
+- utiliza el mismo motor elegido en el ajuste final, todos los submodelos de
+  validación cruzada y todos los modelos observados y nulos del test de
+  permutaciones, evitando mezclar algoritmos dentro de un análisis;
+- amplía SIMPLS a clasificación binaria y multiclase, predicciones acumulativas,
+  selección de complejidad, métricas, ROC, matrices de confusión, loadings y la
+  rotación OPLS-DA documentada de Arii;
+- limita el máximo de componentes al rango estimable por el modelo completo y
+  por el menor entrenamiento de la validación;
+- distribuye Random Subsets y Monte Carlo entre varios trabajos Slurm, conserva
+  leave-one-out y Venetian Blinds dentro de un trabajo y valida de forma estricta
+  la fusión de resultados parciales;
+- permite distribuir permutaciones multinodo con cualquiera de los dos motores,
+  con semillas e índices globales reproducibles y control de sobresuscripción
+  de BLAS;
+- actualiza el runtime remoto a la versión independiente 1.1.0, con R 4.5.3,
+  `mixOmics 6.34.0`, `pls 2.9-0` y `jsonlite 2.0.0`, además de pruebas de salud,
+  instalación limpia, auditoría y smoke tests para PCA y SIMPLS;
+- refuerza el instalador de macOS con runtimes privados, lanzadores globales,
+  desinstalación, validación de herramientas de Apple y mensajes específicos
+  para errores de certificados;
+- actualiza los instaladores y requisitos de Windows y Linux para incluir
+  `pls`, y amplía la matriz de pruebas a Python 3.12 y 3.13 en Windows, Linux,
+  macOS Intel y Apple Silicon;
+- amplía el manual, la documentación científica y las guías Markdown con la
+  arquitectura de los dos motores, validación, permutaciones, ejecución remota,
+  reproducibilidad, AUC/ROC y limitaciones de interpretación.
+
 ## 1.1.0 - 2026-11-13
 
 - incorpora S-TOCSY interactivo para perfiles continuos, con selección del

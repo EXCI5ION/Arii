@@ -1,19 +1,19 @@
 # Requisitos del sistema
 
-Esta guía reúne la preparación previa necesaria para instalar Arii 1.1.0. Los
+Esta guía reúne la preparación previa necesaria para instalar Arii 1.2.0. Los
 comandos de instalación de la aplicación se mantienen en el
 [`README.md`](../README.md).
 
 ## Distribuciones autocontenidas
 
-El instalador oficial para Windows ya incluye Python, R, `mixOmics`, `jsonlite`
+El instalador oficial para Windows ya incluye Python, R, `mixOmics`, `pls`, `jsonlite`
 y las demás dependencias de ejecución. Es la opción recomendada para usuarios
 de Windows y no requiere preparar un entorno de desarrollo.
 
 El runtime para servidores o clústeres Linux también incluye R y sus paquetes.
 No debe confundirse con la aplicación de escritorio: solamente proporciona el
-motor de cálculo remoto. Su ciclo de versión es independiente: Arii 1.1.0
-continúa utilizando el runtime de clúster 1.0.0.
+motor de cálculo remoto. Su ciclo de versión es independiente. El motor SIMPLS
+remoto requiere runtime 1.1.0 o posterior; el runtime 1.0.0 no incluye `pls`.
 
 ## Instalación desde el código fuente
 
@@ -24,7 +24,7 @@ Las instalaciones desde código fuente requieren:
 - R 4.5.x;
 - acceso a Internet durante la instalación de paquetes.
 
-Arii se validó con R 4.5.2 en Windows y R 4.5.3 en Linux. La versión 1.1.0 utiliza
+Arii se validó con R 4.5.2 en Windows y R 4.5.3 en Linux. La versión 1.2.0 utiliza
 [Bioconductor 3.22](https://bioconductor.org/news/bioc_3_22_release/), diseñado
 para la serie R 4.5.
 
@@ -42,6 +42,8 @@ El comando R incluido en el README instala automáticamente:
 - [BiocManager](https://cran.r-project.org/package=BiocManager);
 - [mixOmics](https://bioconductor.org/packages/3.22/bioc/html/mixOmics.html) y
   sus dependencias;
+- [pls](https://cran.r-project.org/package=pls), que proporciona
+  `pls::simpls.fit`;
 - [jsonlite](https://cran.r-project.org/package=jsonlite).
 
 No es necesario descargar individualmente estos paquetes.
@@ -115,12 +117,20 @@ El instalador global admite **macOS 13 o posterior**, tanto en Apple Silicon
 - Git y las herramientas de línea de comandos de Apple;
 - conexión a Internet y al menos 8 GiB libres durante la instalación.
 
-El instalador proporciona su propio Python 3.12, R 4.5.3, `mixOmics` y
+El instalador proporciona su propio Python 3.12, R 4.5.3, `mixOmics`, `pls` y
 `jsonlite`; no necesita instalarlos manualmente. Las herramientas de Apple se
 obtienen con:
 
 ```bash
 xcode-select --install
+```
+
+Si Python informa `CERTIFICATE_VERIFY_FAILED` al descargar el runtime y fue
+instalado desde python.org, ejecute `Install Certificates.command` desde la
+carpeta de esa versión de Python y repita la instalación. Por ejemplo:
+
+```bash
+open "/Applications/Python 3.12/Install Certificates.command"
 ```
 
 En una instalación manual desde el código fuente, utilice Python 3.12 o 3.13 y
@@ -141,7 +151,7 @@ El runtime precompilado requiere:
 - una carpeta personal escribible;
 - acceso SSH y una cuenta Slurm propia para la ejecución remota desde Arii.
 
-No requiere instalar R, Python, Conda ni `mixOmics` en el servidor. Consulte la
+No requiere instalar R, Python, Conda, `mixOmics` ni `pls` en el servidor. Consulte la
 [guía de usuario del clúster](cluster-user-guide.md) para configurar la conexión.
 
 ## Comprobación rápida
@@ -157,7 +167,7 @@ git --version
 Después de ejecutar los comandos del README, compruebe el motor R:
 
 ```bash
-Rscript -e 'stopifnot(getRversion() >= "4.5", getRversion() < "4.6", requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE)); cat("Entorno R de Arii: OK\n")'
+Rscript -e 'stopifnot(getRversion() >= "4.5", getRversion() < "4.6", requireNamespace("mixOmics", quietly=TRUE), requireNamespace("pls", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE)); cat("Entorno R de Arii: OK\n")'
 ```
 
 Y las dependencias Python:

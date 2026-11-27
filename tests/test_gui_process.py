@@ -25,6 +25,8 @@ from arii.gui import (
     MANUAL_FILENAME,
     MainWindow,
     TABLE_COLUMNS,
+    feature_axis_presentation,
+    safe_validation_component_limit,
     settings_application_name,
 )
 
@@ -64,6 +66,13 @@ class InterfaceOrganizationTests(unittest.TestCase):
             self.assertEqual(self.help_menu_title(window), "Ayuda")
             self.assertEqual(
                 [
+                    window.model_engine.itemText(index)
+                    for index in range(window.model_engine.count())
+                ],
+                ["mixOmics", "SIMPLS"],
+            )
+            self.assertEqual(
+                [
                     action.text()
                     for action in window.help_menu.actions()
                     if not action.isSeparator()
@@ -78,6 +87,48 @@ class InterfaceOrganizationTests(unittest.TestCase):
         finally:
             window._dirty = False
             window.close()
+
+    def test_nmr_axis_uses_ppm_even_with_a_generic_source_label(self) -> None:
+        label, inverted = feature_axis_presentation(
+            {"label": "Variable", "modality": "1H-NMR"}
+        )
+
+        self.assertEqual(label, "ppm")
+        self.assertTrue(inverted)
+
+    def test_generic_feature_axis_keeps_its_label_and_direction(self) -> None:
+        label, inverted = feature_axis_presentation(
+            {"label": "Volátil", "modality": "GC-MS"}
+        )
+
+        self.assertEqual(label, "Volátil")
+        self.assertFalse(inverted)
+
+    def test_safe_component_limit_uses_the_smallest_training_fold(self) -> None:
+        classes = ["A"] * 6 + ["B"] * 6
+        biological_ids = [""] * 12
+        self.assertEqual(
+            safe_validation_component_limit(
+                classes,
+                biological_ids,
+                strategy="random_subsets",
+                data_splits=5,
+                train_fraction=0.8,
+                variables=1000,
+            ),
+            7,
+        )
+        self.assertEqual(
+            safe_validation_component_limit(
+                classes,
+                biological_ids,
+                strategy="leave_one_out",
+                data_splits=5,
+                train_fraction=0.8,
+                variables=4,
+            ),
+            4,
+        )
 
     @staticmethod
     def help_menu_title(window: MainWindow) -> str:
@@ -108,8 +159,8 @@ class InterfaceOrganizationTests(unittest.TestCase):
         dialog = AboutDialog()
         try:
             text = "\n".join(label.text() for label in dialog.findChildren(QLabel))
-            self.assertIn("Versión:</b> 1.1.0", text)
-            self.assertIn("Publicada:</b> 2026-11-13", text)
+            self.assertIn("Versión:</b> 1.2.0", text)
+            self.assertIn("Publicada:</b> 2026-11-26", text)
             self.assertIn("Gabriel Anderson", text)
             self.assertIn("Página del proyecto", text)
         finally:

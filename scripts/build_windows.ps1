@@ -125,7 +125,7 @@ try {
             $env:R_LIBS_SITE = Join-Path $bundledRHome "library"
             $env:R_LIBS_USER = Join-Path $bundledRHome "library"
             & $bundledRscript --vanilla -e `
-                'stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
+                'stopifnot(requireNamespace("mixOmics", quietly=TRUE), requireNamespace("pls", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE))'
             if ($LASTEXITCODE -ne 0) {
                 throw "El runtime R privado no superó su prueba de carga."
             }

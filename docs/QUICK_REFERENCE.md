@@ -8,6 +8,9 @@
 4. Asigne una clase para PLS-DA u OPLS-DA. El campo **Individuo** es opcional y
    permite representar un segundo factor visual y agrupar réplicas en la
    validación.
+5. En un modelo supervisado, elija el motor: **mixOmics** o **SIMPLS**. Arii usa
+   esa elección en el ajuste, la validación cruzada y las permutaciones; no
+   combina motores dentro de un análisis.
 
 Los datos deben llegar con el pretratamiento específico de la técnica ya
 realizado. Arii centra y escala, pero no sustituye la normalización, corrección
@@ -17,7 +20,7 @@ de deriva, imputación ni control de calidad propios de cada plataforma.
 
 - **PCA:** exploración no supervisada. Revise varianza explicada, scores,
   Hotelling, loadings, R²X y RMSE de reconstrucción.
-- **PLS-DA:** clasificación supervisada multiclase.
+- **PLS-DA:** clasificación supervisada multiclase con `mixOmics` o SIMPLS.
 - **OPLS-DA:** clasificación binaria con una dirección predictiva y componentes
   ortogonales para facilitar la interpretación de X.
 
@@ -34,7 +37,9 @@ de deriva, imputación ni control de calidad propios de cada plataforma.
 
 - Use las métricas **CV** para estimar rendimiento interno; las de ajuste son
   descriptivas y normalmente optimistas.
-- Revise BER, confusión y ROC además de Q²Y.
+- Revise BER, confusión y ROC/AUC además de Q²Y. En problemas multiclase, el AUC
+  macro pondera por igual todas las clases, pero puede ocultar una curva
+  individual deficiente.
 - La complejidad sugerida es exploratoria; no reemplaza una cohorte externa o
   validación anidada.
 - En OPLS-DA, las métricas predictivas no cambian por la rotación ortogonal.
@@ -69,6 +74,9 @@ PC1 en PCA, LV1 en PLS-DA y Predictiva en OPLS-DA. No exporta un informe ni toda
 las tablas del análisis. Las figuras se exportan desde el menú contextual de
 PyQtGraph; S-TOCSY dispone de su propio botón **Guardar figura**.
 
-La versión del runtime remoto es independiente de la aplicación. Arii 1.1.0
-continúa utilizando el runtime de clúster 1.0.0 mientras no cambien sus
-dependencias ni el contrato de ejecución.
+La versión del runtime remoto es independiente de la aplicación. SIMPLS en
+Slurm requiere el runtime 1.1.0 o posterior, que incluye el paquete R `pls`; el
+runtime 1.0.0 sólo admite el flujo anterior basado en `mixOmics`. Random subsets
+y Monte Carlo pueden distribuirse entre varios trabajos; leave-one-out y
+Venetian blinds permanecen en un trabajo, aunque pueden paralelizar dentro del
+nodo. Arii no utiliza ni consulta la GPU.

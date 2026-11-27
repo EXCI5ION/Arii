@@ -59,6 +59,14 @@ foreach ($package in $manifest.packages) {
     Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
 }
 
-Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $destinationPath "ARII_RUNTIME_MANIFEST.json") -Force
+$portableManifest = $manifest
+$portableManifest.r_home = "."
+foreach ($package in $portableManifest.packages) {
+    $package.path = (Join-Path "library" $package.name) -replace '\\', '/'
+}
+$portableManifest |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -LiteralPath (Join-Path $destinationPath "ARII_RUNTIME_MANIFEST.json") `
+        -Encoding utf8
 Remove-Item -LiteralPath $manifestPath -Force
 Write-Output "Runtime R preparado en $destinationPath"

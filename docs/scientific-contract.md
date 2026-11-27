@@ -48,9 +48,21 @@ los resultados.
 
 ## Motores
 
-- `mixOmics`: ajuste base de PCA y PLS-DA.
-- Arii: rotación documentada del espacio latente del PLS-DA binario para la
-  vista OPLS-DA.
+- PCA: `mixOmics`.
+- PLS-DA y OPLS-DA: el usuario elige `mixOmics` o SIMPLS, implementado por el
+  paquete publicado `pls` mediante `pls::simpls.fit`.
+- Arii usa el motor elegido para el ajuste completo, todos los submodelos CV y
+  todos los modelos observados y nulos del test de permutaciones. No ejecuta los
+  dos motores para comparar ni valida un modelo con el otro.
+- Arii aplica la misma rotación posterior documentada al espacio latente del
+  PLS-DA binario elegido para producir la vista OPLS-DA. No es una llamada a un
+  algoritmo OPLS nativo y no cambia las predicciones del PLS-DA subyacente.
+
+Ambos motores comparten el contrato de datos, las particiones, el
+preprocesamiento aprendido dentro de fold, las métricas y la regla de selección.
+Eso hace comparables las preguntas evaluadas, pero no garantiza scores, loadings
+ni resultados numéricos idénticos. El proyecto conserva la elección y el
+resultado registra el motor y su versión.
 
 La aplicación no expone objetos internos de esos paquetes como contrato público.
 
@@ -97,10 +109,21 @@ definición completa y las pautas de interpretación están en
 
 ## Ejecución
 
-Los motores reciben un contrato formado por worker, especificación JSON y ruta
-de resultado. La ejecución local y el adaptador Slurm comparten ese límite. Los
-perfiles remotos nunca forman parte del contrato
-científico ni contienen secretos; véase
+Los motores reciben un contrato formado por dataset, worker, especificación JSON,
+archivos auxiliares y ruta de resultado. La ejecución local y el adaptador Slurm
+comparten ese límite y la elección del destino no modifica la definición
+estadística. El runtime remoto aporta R y dependencias versionadas; Arii
+transfiere con cada trabajo el worker correspondiente a la aplicación.
+
+Random subsets y Monte Carlo pueden distribuir folds entre trabajos Slurm;
+leave-one-out y Venetian blinds permanecen en un trabajo. Las permutaciones se
+reparten por índices globales y su fusión verifica la identidad del contrato,
+además de índices ausentes o duplicados. Las semillas se derivan de forma
+determinista y los hilos internos de BLAS se limitan para evitar
+sobresuscripción. La GPU no participa actualmente en el cálculo.
+
+Los perfiles remotos nunca forman parte del contrato científico ni contienen
+secretos; véase
 [`cluster-execution-design.md`](cluster-execution-design.md).
 
 ## Ajuste descriptivo del PCA
@@ -161,8 +184,8 @@ para recalcular las métricas del modelo y no representa un threshold validado.
 
 ## OPLS-DA
 
-OPLS-DA es una transformación posterior de un PLS-DA binario calculado con
-`mixOmics`. La dirección de la respuesta continua define el eje **Predictiva**;
+OPLS-DA es una transformación posterior de un PLS-DA binario calculado con el
+motor elegido. La dirección de la respuesta continua define el eje **Predictiva**;
 una base QR del subespacio latente residual genera **Ortogonal 1**, **Ortogonal
 2**, etc. Los loadings se reestiman por mínimos cuadrados sobre los scores
 rotados. La operación no vuelve a ajustar las clases ni altera predicciones,

@@ -102,6 +102,85 @@ SCIENTIFIC_DOCUMENTATION_URL = (
 DOCUMENTATION_URL = f"{PROJECT_URL}/tree/v{__version__}/docs"
 
 
+def feature_axis_presentation(feature_axis: dict[str, object]) -> tuple[str, bool]:
+    """Return the display label and direction for a model feature axis."""
+
+    raw_label = str(feature_axis.get("label", "") or "").strip()
+    modality = str(feature_axis.get("modality", "") or "").strip().casefold()
+    normalized_label = raw_label.casefold()
+    is_nmr = (
+        normalized_label == "ppm"
+        or "nmr" in modality
+        or "rmn" in modality
+    )
+    if is_nmr:
+        return "ppm", True
+    return raw_label or "Característica", False
+
+
+def safe_validation_component_limit(
+    classes: list[str],
+    biological_ids: list[str],
+    *,
+    strategy: str,
+    data_splits: int,
+    train_fraction: float,
+    variables: int,
+) -> int:
+    """Conservative component limit estimable in every validation submodel."""
+
+    if len(classes) != len(biological_ids) or not classes:
+        return 0
+    units: dict[str, tuple[str, int, int]] = {}
+    ordered: list[str] = []
+    for index, (class_name, biological_id) in enumerate(
+        zip(classes, biological_ids, strict=True)
+    ):
+        key = f"bio:{biological_id}" if biological_id else f"sample:{index}"
+        if key not in units:
+            units[key] = (class_name, 0, len(ordered))
+            ordered.append(key)
+        existing_class, count, order = units[key]
+        if existing_class != class_name:
+            return 0
+        units[key] = (existing_class, count + 1, order)
+
+    total = len(classes)
+    if strategy in {"random_subsets", "monte_carlo"}:
+        removed = 0
+        for class_name in dict.fromkeys(classes):
+            sizes = sorted(
+                (
+                    count
+                    for unit_class, count, _order in units.values()
+                    if unit_class == class_name
+                ),
+                reverse=True,
+            )
+            if strategy == "random_subsets":
+                test_units = (len(sizes) + data_splits - 1) // data_splits
+            else:
+                test_units = max(
+                    1,
+                    min(
+                        len(sizes) - 1,
+                        int(round(len(sizes) * (1 - train_fraction))),
+                    ),
+                )
+            removed += sum(sizes[:test_units])
+        minimum_training = total - removed
+    elif strategy == "leave_one_out":
+        minimum_training = total - max(count for _class, count, _order in units.values())
+    elif strategy == "venetian_blinds":
+        fold_sizes = [0] * data_splits
+        for offset, key in enumerate(ordered):
+            fold_sizes[offset % data_splits] += units[key][1]
+        minimum_training = total - max(fold_sizes)
+    else:
+        return 0
+    return max(0, min(total - 1, variables, minimum_training - 1))
+
+
 class AboutDialog(QDialog):
     """Show Arii identity, version and project provenance."""
 
@@ -822,6 +901,10 @@ class MainWindow(QMainWindow):
         self.validation_method.addItem("Venetian blinds", "venetian_blinds")
         self.validation_method.currentIndexChanged.connect(self._settings_changed)
         self.validation_method.currentIndexChanged.connect(self._update_validation_summary)
+        self.model_engine = QComboBox()
+        self.model_engine.addItem("mixOmics", "mixomics")
+        self.model_engine.addItem("SIMPLS", "simpls")
+        self.model_engine.currentIndexChanged.connect(self._settings_changed)
         self.supervised_repeats = QSpinBox()
         self.supervised_repeats.setRange(1, 200)
         self.supervised_repeats.setValue(20)
@@ -870,6 +953,7 @@ class MainWindow(QMainWindow):
         controls.addRow("Escalado (tras centrado)", self.feature_scaling)
         self.ncomp_label = QLabel("Componentes PCA")
         self.validation_method_label = QLabel("Validación cruzada")
+        self.model_engine_label = QLabel("Motor estadístico")
         self.iterations_label = QLabel("Iteraciones")
         self.splits_label = QLabel("Data splits")
         self.monte_carlo_iterations_label = QLabel("Iteraciones MC")
@@ -877,6 +961,7 @@ class MainWindow(QMainWindow):
         self.validation_summary_label = QLabel("Resumen")
         controls.addRow(self.ncomp_label, self.ncomp)
         controls.addRow(self.validation_method_label, self.validation_method)
+        controls.addRow(self.model_engine_label, self.model_engine)
         controls.addRow(self.iterations_label, self.supervised_repeats)
         controls.addRow(self.splits_label, self.supervised_splits)
         controls.addRow(self.monte_carlo_iterations_label, self.monte_carlo_iterations)
@@ -1581,6 +1666,7 @@ class MainWindow(QMainWindow):
         is_supervised = method in {"plsda", "orthogonalized_plsda"}
         uses_pls_components = method in {"pca", "plsda", "orthogonalized_plsda"}
         self.validation_method.setEnabled(is_supervised)
+        self.model_engine.setEnabled(is_supervised)
         self.supervised_repeats.setEnabled(is_supervised)
         self.supervised_splits.setEnabled(is_supervised)
         self.validation_summary.setEnabled(is_supervised)
@@ -1593,10 +1679,12 @@ class MainWindow(QMainWindow):
             self.supervised_repeats,
             self.supervised_splits,
             self.validation_method,
+            self.model_engine,
             self.monte_carlo_iterations,
             self.monte_carlo_train_percent,
             self.validation_summary,
             self.validation_method_label,
+            self.model_engine_label,
             self.iterations_label,
             self.splits_label,
             self.monte_carlo_iterations_label,
@@ -1835,6 +1923,23 @@ class MainWindow(QMainWindow):
                         "entrenamiento en cada submodelo.",
                     )
                     return
+            safe_components = safe_validation_component_limit(
+                selected_classes,
+                [""] * len(selected),
+                strategy=validation_strategy,
+                data_splits=data_splits,
+                train_fraction=self.monte_carlo_train_percent.value() / 100,
+                variables=self.dataset.features,
+            )
+            if self.ncomp.value() > safe_components:
+                QMessageBox.warning(
+                    self,
+                    "Máximo de componentes",
+                    f"Se solicitaron {self.ncomp.value()} componentes, pero la "
+                    f"validación configurada permite como máximo "
+                    f"{safe_components}. Reduzca el número de componentes.",
+                )
+                return
         work = Path(tempfile.gettempdir()) / "arii-work"
         work.mkdir(exist_ok=True)
         stamp = str(time.time_ns())
@@ -1856,6 +1961,7 @@ class MainWindow(QMainWindow):
             "selected_sample_indices": selected,
             "classes": classes,
             "n_components": self.ncomp.value(),
+            "engine": self.model_engine.currentData(),
             "validation": {
                 "strategy": self.validation_method.currentData(),
                 "repeats": (
@@ -1886,7 +1992,12 @@ class MainWindow(QMainWindow):
             worker=worker, job_path=job_path, result_path=self.result_path,
             dataset_path=Path(self.dataset.path), stamp=stamp,
             finished_callback=self._pca_finished,
-            local_status=f"Ejecutando {method_display} con mixOmics…",
+            local_status=(
+                f"Ejecutando {method_display} con "
+                f"{self.model_engine.currentText()}…"
+                if method in {"plsda", "orthogonalized_plsda"}
+                else f"Ejecutando {method_display} con mixOmics…"
+            ),
             method=method,
         )
         if started:
@@ -2049,8 +2160,13 @@ class MainWindow(QMainWindow):
                 f" · advertencia: {uncovered} muestra(s) sin predicción CV"
                 if uncovered else ""
             )
+            engine_display = {
+                "mixomics": "mixOmics",
+                "simpls": "SIMPLS",
+            }.get(performance.get("engine", "mixomics"), "mixOmics")
             metric_summary = (
-                f"<br>{validation_description} = {submodels} submodelos"
+                f"<br>Motor estadístico: {engine_display}<br>"
+                f"{validation_description} = {submodels} submodelos"
                 f"{parallel_text}, "
                 f"{train_fraction * 100:.0f}/"
                 f"{(1 - train_fraction) * 100:.0f}{effective_text}{coverage_text}<br>"
@@ -2105,9 +2221,9 @@ class MainWindow(QMainWindow):
         ppm = np.asarray(self.result["ppm"], dtype=float)
         loadings = np.asarray(self.result["loadings"], dtype=float)
         feature_axis = self.result.get("feature_axis", {})
-        axis_label = feature_axis.get("label", "ppm")
+        axis_label, invert_axis = feature_axis_presentation(feature_axis)
         representation = feature_axis.get("representation", "continuous_profile")
-        self.loading_plot.invertX(axis_label.lower() == "ppm")
+        self.loading_plot.invertX(invert_axis)
         self.loading_plot.clear()
         self.loading_plot.addItem(
             pg.InfiniteLine(pos=0.0, angle=0, pen=pg.mkPen("#64748b", width=1.2)),
@@ -2250,11 +2366,11 @@ class MainWindow(QMainWindow):
         component = self.loading_value_component.currentIndex()
         ppm = np.asarray(self.result["ppm"], dtype=float)
         feature_axis = self.result.get("feature_axis", {})
-        axis_label = feature_axis.get("label", "Corrimiento químico")
+        axis_label, invert_axis = feature_axis_presentation(feature_axis)
         representation = feature_axis.get("representation", "continuous_profile")
-        self.loading_value_plot.invertX(axis_label.lower() == "ppm")
+        self.loading_value_plot.invertX(invert_axis)
         self.loading_value_plot.setLabel(
-            "bottom", axis_label, units="ppm" if axis_label.lower() == "ppm" else None
+            "bottom", axis_label, units="ppm" if invert_axis else None
         )
         scaling = self.result.get("preprocessing", {}).get("scaling", "pareto")
         scaling_explanation = {
@@ -2872,6 +2988,7 @@ class MainWindow(QMainWindow):
             "current_components": current_components,
             "current_orthogonal_components": int(opls.get("orthogonal_components", 0)),
             "orthogonal_selection": selection.get("mode", "manual"),
+            "engine": performance.get("engine", "mixomics"),
             "validation": {
                 "strategy": performance.get("validation_method", "random_subsets"),
                 "repeats": int(performance["repeats"]),
@@ -2888,6 +3005,10 @@ class MainWindow(QMainWindow):
                 "analysis_mode": self.permutation_analysis_mode.currentData(),
             },
         }
+        permutation_engine = {
+            "mixomics": "mixOmics",
+            "simpls": "SIMPLS",
+        }.get(performance.get("engine", "mixomics"), "mixOmics")
         work = Path(tempfile.gettempdir()) / "arii-work"
         work.mkdir(exist_ok=True)
         stamp = str(time.time_ns())
@@ -2901,8 +3022,8 @@ class MainWindow(QMainWindow):
             dataset_path=Path(self.dataset.path), stamp=stamp,
             finished_callback=self._permutation_finished,
             local_status=(
-                f"Ejecutando {self.permutation_count.value()} permutaciones; "
-                "este cálculo puede tardar…"
+                f"Ejecutando {self.permutation_count.value()} permutaciones con "
+                f"{permutation_engine}; este cálculo puede tardar…"
             ),
             method=method,
         )
@@ -3111,6 +3232,13 @@ class MainWindow(QMainWindow):
     def _update_permutation_summary(self, permutation: dict) -> None:
         p_values = permutation["empirical_p"]
         policy = "complejidad actual fija"
+        engine_display = {
+            "mixomics": "mixOmics",
+            "simpls": "SIMPLS",
+        }.get(
+            permutation.get("validation", {}).get("engine", "mixomics"),
+            "mixOmics",
+        )
         rejection_values = np.atleast_1d(
             permutation.get("null_rejected_fraction", [0])
         ).astype(float)
@@ -3151,6 +3279,7 @@ class MainWindow(QMainWindow):
             )
         self.permutation_summary.setText(
             f"<b>Test sobre el modelo actual</b> · {policy} · "
+            f"motor {engine_display} · "
             f"{permutation['permutations']} permutaciones por "
             f"{permutation.get('exchangeability_unit', 'sample')}.<br>"
             f"p(R²Y)={self._format_metric(p_values.get('r2y'), '.4f')} · "
@@ -3341,6 +3470,7 @@ class MainWindow(QMainWindow):
                 },
                 "hotelling_level": self.hotelling_level.currentData(),
                 "supervised_validation": {
+                    "engine": self.model_engine.currentData(),
                     "strategy": self.validation_method.currentData(),
                     "repeats": self.supervised_repeats.value(),
                     "data_splits": self.supervised_splits.value(),
@@ -3469,6 +3599,11 @@ class MainWindow(QMainWindow):
             if scaling_index >= 0:
                 self.feature_scaling.setCurrentIndex(scaling_index)
             supervised = analysis.get("supervised_validation", {})
+            engine_index = self.model_engine.findData(
+                supervised.get("engine", "mixomics")
+            )
+            if engine_index >= 0:
+                self.model_engine.setCurrentIndex(engine_index)
             validation_index = self.validation_method.findData(
                 supervised.get("strategy", "random_subsets")
             )

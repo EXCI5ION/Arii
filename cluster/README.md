@@ -6,7 +6,10 @@ primero deben superar los workers de salud, la suite numérica y comparaciones d
 tolerancia con resultados de referencia. Después de resolverlo en el clúster se
 exportará un lock explícito con las URLs y hashes exactos de los paquetes.
 
-OPLS-DA se implementa sobre `mixOmics`; `ropls` no forma parte del runtime.
+El runtime contiene `mixOmics` y `pls`: Arii puede ejecutar el flujo supervisado
+completo con mixOmics o con SIMPLS mediante `pls::simpls.fit`. La representación
+OPLS-DA binaria aplica la misma rotación posterior sobre el motor seleccionado;
+`ropls` no forma parte del runtime.
 
 `runtime/` contiene los scripts usados para producir el artefacto de servidor
 `Arii-<versión>-cluster-runtime-linux-x86_64.tar.gz`. El archivo se construye

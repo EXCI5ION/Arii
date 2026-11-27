@@ -25,12 +25,24 @@ class WindowsPackagingTests(unittest.TestCase):
     def test_windows_bundle_contains_versioned_pdf_documentation(self) -> None:
         specification = Path("packaging/arii.spec").read_text(encoding="utf-8")
         self.assertIn('project_root / "docs" / "pdf"', specification)
+        self.assertIn("documentation_files", specification)
+        self.assertNotIn(
+            '(str(project_root / "docs" / "pdf"), "docs/pdf")',
+            specification,
+        )
         pdf_names = {path.name for path in Path("docs/pdf").glob("*.pdf")}
-        self.assertIn("Arii-manual-de-usuario-versión1.1.0.pdf", pdf_names)
+        self.assertIn("Arii-manual-de-usuario-versión1.2.0.pdf", pdf_names)
         self.assertIn(
-            "Arii-documentacion-cientifica-versión1.1.0.pdf",
+            "Arii-documentacion-cientifica-versión1.2.0.pdf",
             pdf_names,
         )
+
+    def test_windows_runtime_manifest_is_rewritten_as_portable(self) -> None:
+        script = Path("scripts/stage_windows_r_runtime.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('$portableManifest.r_home = "."', script)
+        self.assertIn('Join-Path "library" $package.name', script)
 
 
 if __name__ == "__main__":

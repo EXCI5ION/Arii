@@ -30,7 +30,8 @@
 \definecolor{AriiLight}{HTML}{F3F8FC}
 \definecolor{AriiGray}{HTML}{46566A}
 
-\newcommand{\AriiVersion}{1.1.0}
+\newcommand{\AriiVersion}{1.2.0}
+\newcommand{\AriiRuntimeVersion}{1.1.0}
 \newcommand{\menu}[1]{\textbf{#1}}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\tecla}[1]{\fbox{\strut\textsf{#1}}}
@@ -115,11 +116,12 @@
 \section{Propósito}
 
 Arii es una aplicación de escritorio para el análisis quimiométrico de
-matrices ómicas. Permite ejecutar PCA, PLS-DA y una representación OPLS-DA
-binaria a partir de modelos calculados con \code{mixOmics}, sin exigir que el
+matrices ómicas. Permite ejecutar PCA con \code{mixOmics} y PLS-DA/OPLS-DA con
+\code{mixOmics} o SIMPLS mediante el paquete R \code{pls}, sin exigir que el
 usuario programe en R o Python. La interfaz reúne la definición de muestras, la
 configuración del modelo, la validación cruzada y la inspección de resultados en
-un mismo flujo de trabajo.
+un mismo flujo de trabajo. La elección de los motores supervisados se explica en
+la sección~\ref{sec:motor-supervisado}.
 
 Arii está dirigido a investigadores que disponen de una matriz numérica procesada. En el caso de datos RMN, puede usar \href{https://www.github.com/EXCI5ION/GIULI/}{GIULI} para procesar sus datos y exportar la matriz numérica necesaria. Puede trabajar con perfiles continuos, como espectros de RMN, o con tablas de características discretas, como áreas cromatográficas, metabolitos, proteínas o genes. Arii ayuda a construir y revisar el modelo.
 
@@ -183,8 +185,7 @@ La opción recomendada para Windows x64 es el instalador publicado en
 \href{https://github.com/EXCI5ION/Arii/releases/latest}{GitHub Releases}. Incluye
 la aplicación y un runtime privado de R. No es necesario instalar R por separado.
 
-Para arquitecturas sin instalador compatible, use la instalación desde código
-fuente descrita en \code{docs/OS-Requirements.md}.
+Para arquitecturas sin instalador compatible, consulte \code{docs/OS-Requirements.md}.
 
 Tras instalar, abra Arii desde el acceso directo o desde el menú Inicio. El
 instalador mantiene sus runtimes privados separados de instalaciones globales
@@ -213,14 +214,25 @@ cd Arii
 python3 install_macos.py
 \end{lstlisting}
 
-El instalador crea \code{Arii.app} y prepara runtimes privados. Consulte siempre
-los requisitos de la versión publicada.
+El instalador crea \code{Arii.app}, prepara runtimes privados y proporciona los
+comandos de mantenimiento siguientes:
+
+\begin{lstlisting}[language=bash]
+sudo arii-update
+sudo arii-update --repair
+sudo arii-uninstall
+\end{lstlisting}
+
+Consulte siempre los requisitos de la versión publicada. Si Python informa
+\code{CERTIFICATE\_VERIFY\_FAILED} durante la descarga, ejecute \code{Install Certificates.command} desde la carpeta de esa
+versión de Python antes de repetir la instalación.
 
 \section{Comprobación de la instalación}
 
 Al abrir Arii, cargue primero un dataset pequeño y ejecute un PCA de dos
 componentes. Esta prueba verifica la interfaz, el acceso al motor R y la
-comunicación con \code{mixOmics}. Si la aplicación abre pero el cálculo no
+comunicación con \code{mixOmics}. Para verificar SIMPLS, ejecute después un
+PLS-DA pequeño y elija ese motor. Si la aplicación abre pero el cálculo no
 comienza, consulte el capítulo de solución de problemas antes de reinstalar.
 
 Las instalaciones desde código también incluyen la consola. El comando
@@ -294,6 +306,20 @@ clásico están en
   ortogonales. Requiere exactamente dos clases.
 \end{description}
 
+\section{Motor supervisado}\label{sec:motor-supervisado}
+
+Al elegir PLS-DA u OPLS-DA aparece el selector \menu{Motor}. Sus opciones son:
+
+\begin{description}[leftmargin=3.2cm,style=nextline]
+  \item[mixOmics] Ajusta \code{mixOmics::plsda} y clasifica mediante
+  \code{max.dist}.
+  \item[SIMPLS] Usa el algoritmo SIMPLS de de Jong implementado por
+  \code{pls::simpls.fit}; Arii construye la matriz indicadora de clases y asigna
+  la respuesta predicha máxima.
+\end{description}
+
+La \href{https://github.com/EXCI5ION/Arii/blob/main/docs/pdf/Arii-documentacion-cientifica-versión1.2.0.pdf}{documentación científica} desarrolla la distinción entre la selección de modelos y núcleo numérico con mayor detalle.
+
 Comience con PCA incluso si la pregunta final es supervisada. Un PCA puede
 revelar muestras extremas, deriva, lote o agrupamientos no previstos antes de
 introducir las clases. Pase a PLS-DA u OPLS-DA cuando la pregunta sea realmente
@@ -334,8 +360,7 @@ Los modelos supervisados permiten:
   folds.
 \end{itemize}
 
-El resumen bajo los controles informa la fracción y cantidad de submodelos. Si
-hay individuos, Arii valida por individuo y no por réplica aislada. En cada
+El resumen bajo los controles informa la fracción y cantidad de submodelos. En cada
 submodelo, el centrado y el escalado se estiman exclusivamente con el conjunto
 de entrenamiento y después se aplican a las muestras externas.
 
@@ -349,7 +374,7 @@ de entrenamiento y después se aplican a las muestras externas.
 Random subsets & Estimación repetida y estratificada del rendimiento interno. &
 Cada clase debe tener al menos tantas unidades como folds. \\
 Monte Carlo & Explorar muchas particiones aleatorias con una fracción de
-entrenamiento elegida. & La cobertura externa puede ser desigual. \\
+entrenamiento. & La cobertura externa puede ser desigual. \\
 Leave-one-out & Conjuntos pequeños y unidades claramente independientes. &
 Puede tener alta varianza y coste elevado. \\
 Venetian blinds & Datos con un orden justificable y sin estructura adversa. &
@@ -389,8 +414,6 @@ Antes de configurar Arii por primera vez, reúna los siguientes datos:
 No confunda la \emph{cuenta Slurm} con su usuario o contraseña: normalmente es el
 proyecto institucional al que se imputa el consumo. Partición y QOS pueden
 dejarse vacías cuando el centro proporciona valores predeterminados.
-
-\newpage
 
 \subsection{Crear el perfil remoto por primera vez}
 
@@ -483,13 +506,25 @@ Una muestra alejada merece revisión, no eliminación automática. Compruebe pri
 Todas las muestras incluidas deben tener clase; cada clase necesita al menos dos
 muestras. OPLS-DA admite exactamente dos clases.
 
+Antes de ejecutar el modelo, elija \menu{mixOmics} o \menu{SIMPLS} en el
+selector \menu{Motor}. La elección se aplica al ajuste, la validación cruzada y
+las permutaciones; Arii no combina motores dentro del mismo análisis. Consulte
+la sección~\ref{sec:motor-supervisado} para conocer la responsabilidad de Arii y
+de cada paquete estadístico.
+
 PLS-DA busca direcciones de $X$ relacionadas con una representación indicadora
 de la clase. Esa supervisión hace que pueda encontrar separación incluso en datos ruidosos, especialmente cuando hay muchas más variables que muestras. Por eso, la interpretación debe comenzar por la validación y no por los scores.
 
-La opción OPLS-DA de Arii reorganiza un PLS-DA binario en una dirección
+Los dos motores disponibles admiten PLS-DA con dos o más clases. La cantidad
+máxima de componentes queda limitada por el rango del modelo completo y por el
+menor entrenamiento de validación; Arii no calcula componentes que esos
+submodelos no pueden estimar honestamente.
+
+La opción OPLS-DA de Arii reorganiza el PLS-DA binario del motor elegido en una dirección
 predictiva y direcciones ortogonales. Facilita la lectura de la variación, pero
 no crea nuevas predicciones: las métricas de clasificación son las del PLS-DA
-subyacente.
+subyacente. Es una rotación posterior propia de Arii, no una función OPLS nativa
+de mixOmics ni de pls.
 
 \section{Selección del modelo}
 
@@ -515,14 +550,41 @@ Interprete las métricas en conjunto:
 
 \section{Curvas de ROC}
 
-La vista ROC compara ajuste y CV por grupo. La respuesta al umbral conserva las
-curvas de sensibilidad y especificidad y marca el umbral CV exploratorio.
+La vista ROC compara el comportamiento de ajuste y de validación cruzada para
+cada clase mediante un esquema uno contra el resto. La curva representa la
+sensibilidad frente a la tasa de falsos positivos,
+$1-\mathrm{especificidad}$, al recorrer todos los posibles umbrales de la
+respuesta continua del modelo.
 
-La vista de ajuste muestra el comportamiento sobre las mismas muestras usadas
-para estimar el modelo; la vista CV utiliza respuestas externas y es la
-referencia apropiada para discutir rendimiento interno. El umbral marcado
-maximiza el índice de Youden y se ofrece para exploración, no para tomar una
-decisión diagnóstica.
+El área bajo la curva (AUC), resume la capacidad
+del modelo para ordenar una muestra positiva por encima de una negativa sin
+fijar previamente un umbral. Un valor de $0.5$ corresponde aproximadamente a
+una discriminación aleatoria y un valor de $1$ a una separación perfecta en
+los datos evaluados. Estos valores deben interpretarse junto con su procedencia:
+un AUC de ajuste puede ser optimista, mientras que el AUC CV se calcula a partir
+de respuestas externas y constituye la referencia apropiada para discutir el
+rendimiento interno.
+
+En problemas multiclase, Arii calcula una curva uno contra el resto para cada
+clase y presenta también el AUC macro, definido como la media no ponderada de
+los AUC de todas las clases. Esta media concede la misma importancia a cada
+grupo, independientemente de su cantidad de muestras, pero puede ocultar una
+clase con rendimiento deficiente; por ello deben revisarse también las curvas
+individuales, el BER y la matriz de confusión.
+
+La vista de respuesta al umbral muestra las curvas de sensibilidad y
+especificidad y marca el umbral CV exploratorio que maximiza el índice de Youden,
+
+\[
+J=\mathrm{sensibilidad}+\mathrm{especificidad}-1.
+\]
+
+El AUC evalúa el ordenamiento a través de todos los umbrales, mientras que el
+índice de Youden selecciona un único punto operativo. Por tanto, un AUC elevado
+no implica que el umbral marcado sea apropiado para cualquier aplicación. El
+coste relativo de falsos positivos y falsos negativos, la prevalencia y una
+validación independiente deben considerarse antes de adoptar un umbral para
+decisiones diagnósticas o predictivas.
 
 \chapter{Loadings, Loading plot y STOCSY}
 
@@ -560,6 +622,10 @@ molécula ni establece causalidad.
 Seleccione primero la cantidad de componentes del modelo actual. Después elija
 modo empírico, residual o ambos, cantidad de iteraciones y métrica. Arii fija esa complejidad y compara el resultado observado con respuestas permutadas.
 
+El test usa el motor seleccionado tanto para el modelo observado como para todos
+los modelos permutados. Cambiar de motor cambia el modelo puesto a prueba y
+requiere ejecutar nuevamente el test.
+
 Para un informe definitivo, use suficientes permutaciones para la resolución de
 p deseada.
 
@@ -580,7 +646,7 @@ anterior porque cambia la hipótesis evaluada.
 \menu{Archivo \texorpdfstring{$\rightarrow$}{ > } Guardar proyecto} crea un
 archivo \code{.arii} con configuración y resultados. El dataset se referencia mediante ruta y SHA-256; manténgalo disponible al reabrir.
 
-El archivo de proyecto conserva configuración, metadatos y resultados, pero no
+El archivo de proyecto conserva configuración, motor seleccionado, metadatos y resultados, pero no
 duplica la matriz original. Si el dataset se mueve o cambia, la ruta o la huella
 SHA-256 dejan de coincidir. Conserve el dataset, el proyecto y los archivos
 exportados como un conjunto documental.
@@ -678,45 +744,57 @@ permite ejecutar software desde esa ubicación. El nodo de acceso necesita
 La versión de la aplicación de escritorio y la del runtime del clúster tienen
 ciclos independientes. Arii envía con cada trabajo el worker R correspondiente
 a la aplicación instalada; el runtime remoto aporta R, \code{mixOmics},
-\code{jsonlite} y sus dependencias reproducibles. Por ese motivo, Arii 1.1.0
-continúa utilizando el runtime de clúster 1.0.0 mientras no cambien las
-dependencias ni el contrato de ejecución remota.
+\code{pls}, \code{jsonlite} y sus dependencias reproducibles. El flujo remoto
+con SIMPLS requiere el runtime \AriiRuntimeVersion{} o posterior. El runtime
+1.0.0 no incluye \code{pls} y no debe utilizarse con el flujo de dos motores.
 
-Inicie una sesión SSH en el servidor y descargue el instalador de la versión
-vigente del runtime:
+Para Arii \AriiVersion, el runtime remoto correspondiente es
+\AriiRuntimeVersion. El instalador se obtiene del release de la aplicación, pero
+el archivo que descarga conserva la versión independiente del runtime. Inicie
+una sesión SSH en el servidor y ejecute:
 
 \begin{lstlisting}[language=bash]
-ARII_RUNTIME_VERSION=1.0.0
+ARII_RELEASE_VERSION=1.2.0
+ARII_RUNTIME_VERSION=1.1.0
 wget -O install-arii-server.sh \
-  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RUNTIME_VERSION}/cluster/install-server.sh"
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RELEASE_VERSION}/cluster/install-server.sh"
 less install-arii-server.sh
-ARII_VERSION="$ARII_RUNTIME_VERSION" bash install-arii-server.sh
+ARII_VERSION="$ARII_RUNTIME_VERSION" \
+ARII_RELEASE_BASE_URL="https://github.com/EXCI5ION/Arii/releases/download/v${ARII_RELEASE_VERSION}" \
+  bash install-arii-server.sh
 \end{lstlisting}
 
-La variable externa se llama \code{ARII\_VERSION} porque así la recibe el
-instalador publicado originalmente. En este manual se usa
-\code{ARII\_RUNTIME\_VERSION} para evitar confundirla con la versión de la
-aplicación de escritorio.
+\code{ARII\_RELEASE\_VERSION} identifica el release de la aplicación que aloja
+los archivos; \code{ARII\_RUNTIME\_VERSION} identifica el entorno científico
+remoto. La variable \code{ARII\_VERSION} conserva ese segundo valor porque así
+lo recibe el instalador, mientras \code{ARII\_RELEASE\_BASE\_URL} indica dónde
+se publicaron los artefactos.
 
 La revisión con \code{less} permite inspeccionar el script antes de ejecutarlo.
 Si \code{wget} no está disponible, use:
 
 \begin{lstlisting}[language=bash]
+ARII_RELEASE_VERSION=1.2.0
 curl -fLo install-arii-server.sh \
-  "https://raw.githubusercontent.com/EXCI5ION/Arii/v1.0.0/cluster/install-server.sh"
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RELEASE_VERSION}/cluster/install-server.sh"
 \end{lstlisting}
 
-El instalador comprueba sistema, arquitectura y versión de \code{glibc}; descarga el runtime y su archivo de sumas; verifica SHA-256; extrae el entorno; corrige sus rutas internas con \code{conda-unpack}; y ejecuta una prueba directa de R, \code{mixOmics} y \code{jsonlite}. Por defecto instala en:
+El instalador comprueba sistema, arquitectura y versión de \code{glibc}; descarga
+el runtime y su archivo de sumas; verifica SHA-256; extrae el entorno; corrige
+sus rutas internas con \code{conda-unpack}; y ejecuta una prueba directa de R,
+\code{mixOmics}, \code{pls} y \code{jsonlite}. Por defecto instala en:
 
 \begin{lstlisting}
-$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64
+$HOME/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64
 \end{lstlisting}
 
 Puede elegir otra base absoluta antes de ejecutar:
 
 \begin{lstlisting}[language=bash]
 export ARII_INSTALL_BASE=/scratch/USUARIO/arii/runtime/releases
-ARII_VERSION=1.0.0 bash install-arii-server.sh
+ARII_VERSION=1.1.0 \
+ARII_RELEASE_BASE_URL="https://github.com/EXCI5ION/Arii/releases/download/v1.2.0" \
+  bash install-arii-server.sh
 \end{lstlisting}
 
 No use como destino la raíz del sistema ni una carpeta temporal que se elimine
@@ -729,7 +807,7 @@ final antes de interrumpirla.
 Al finalizar, el instalador imprime una ruta semejante a:
 
 \begin{lstlisting}
-/home/USUARIO/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64/bin/Rscript
+/home/USUARIO/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64/bin/Rscript
 \end{lstlisting}
 
 Copie esa ruta completa. Es el valor que debe ingresar en \menu{Rscript remoto}
@@ -744,7 +822,7 @@ de acceso. Para comprobar también los nodos de cálculo, entre en la carpeta
 instalada y envíe el trabajo de salud:
 
 \begin{lstlisting}[language=bash]
-cd "$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64"
+cd "$HOME/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64"
 sbatch share/arii/health.sbatch
 \end{lstlisting}
 
@@ -757,16 +835,16 @@ visible desde el nodo asignado.
 \section{Servidor sin acceso a Internet}
 
 Descargue desde otra computadora el archivo
-\code{Arii-1.0.0-cluster-runtime-linux-x86\_64.tar.gz} y
-\code{SHA256SUMS-cluster-1.0.0.txt} publicados en el release 1.0.0. Transfiéralos a su
+\code{Arii-1.1.0-cluster-runtime-linux-x86\_64.tar.gz} y
+\code{SHA256SUMS-cluster-1.1.0.txt} publicados con el release 1.2.0. Transfiéralos a su
 cuenta mediante el mecanismo autorizado por la institución. Ya en el servidor:
 
 \begin{lstlisting}[language=bash]
-sha256sum -c SHA256SUMS-cluster-1.0.0.txt
+sha256sum -c SHA256SUMS-cluster-1.1.0.txt
 mkdir -p "$HOME/arii/runtime/releases"
-tar -xzf Arii-1.0.0-cluster-runtime-linux-x86_64.tar.gz \
+tar -xzf Arii-1.1.0-cluster-runtime-linux-x86_64.tar.gz \
   -C "$HOME/arii/runtime/releases"
-cd "$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64"
+cd "$HOME/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64"
 ./install-runtime.sh
 \end{lstlisting}
 

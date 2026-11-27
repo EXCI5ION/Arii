@@ -4,15 +4,16 @@ type: software
 title: "Arii"
 abstract: >-
   Aplicación abierta para análisis quimiométrico reproducible de matrices
-  single-ómicas, con ejecución local y remota en clústeres Slurm.
+  single-ómicas mediante PCA, PLS-DA y OPLS-DA, con motores supervisados
+  mixOmics y SIMPLS y ejecución local o remota en clústeres Slurm.
 authors:
   - family-names: "Anderson"
     given-names: "Gabriel"
     affiliation: "Departamento de Química del Litoral, CENUR Litoral Norte, Universidad de la República"
     email: "gabimiemp@gmail.com"
-version: "1.1.0"
-date-released: 2026-11-13
-doi: "10.5281/zenodo.24211548"
+version: "1.2.0"
+date-released: 2026-11-26
+doi: "10.5281/zenodo.23167788"
 license: GPL-3.0-or-later
 repository-code: "https://github.com/EXCI5ION/Arii"
 url: "https://github.com/EXCI5ION/Arii"
@@ -23,4 +24,5 @@ keywords:
   - PLS-DA
   - OPLS-DA
   - mixOmics
+  - SIMPLS
   - Slurm

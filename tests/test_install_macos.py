@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import plistlib
+import ssl
+import subprocess
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +39,21 @@ class MacOSInstallerPlatformTests(unittest.TestCase):
             with self.assertRaisesRegex(installer.InstallerError, "macOS 13.0"):
                 installer.detect_macos_platform()
 
+    def test_rejects_incomplete_command_line_tools(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["/usr/bin/xcode-select", "-p"],
+            returncode=2,
+            stdout="",
+            stderr="unable to get active developer directory",
+        )
+        with patch.object(
+            installer.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}"
+        ), patch.object(installer.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(
+                installer.InstallerError, "Command Line Tools"
+            ):
+                installer.require_system_tools()
+
 
 class MacOSInstallerIntegrityTests(unittest.TestCase):
     def test_micromamba_downloads_are_versioned_and_hashed(self) -> None:
@@ -49,6 +67,7 @@ class MacOSInstallerIntegrityTests(unittest.TestCase):
         self.assertIn("python=3.12", installer.RUNTIME_PACKAGES)
         self.assertIn("r-base=4.5.3", installer.RUNTIME_PACKAGES)
         self.assertIn("bioconductor-mixomics=6.34.0", installer.RUNTIME_PACKAGES)
+        self.assertIn("r-pls=2.9_0", installer.RUNTIME_PACKAGES)
         self.assertIn("r-jsonlite=2.0.0", installer.RUNTIME_PACKAGES)
 
     def test_app_bundle_declares_the_supported_macos_version(self) -> None:
@@ -63,10 +82,44 @@ class MacOSInstallerIntegrityTests(unittest.TestCase):
         self.assertEqual(metadata["LSMinimumSystemVersion"], "13.0")
 
     def test_updater_defaults_to_update_but_preserves_explicit_modes(self) -> None:
-        source = Path("install_macos.py").read_text(encoding="utf-8")
-        self.assertIn('if [ \\"$#\\" -eq 0 ]', source)
+        source = installer.updater_launcher()
+        self.assertIn('if [ "$#" -eq 0 ]', source)
         self.assertIn("set -- --update", source)
-        self.assertNotIn('--update \\"$@\\"', source)
+        self.assertNotIn('--update "$@"', source)
+
+    def test_launchers_invoke_modules_with_the_private_python(self) -> None:
+        gui = installer.python_module_launcher("arii.gui")
+        cli = installer.python_module_launcher("arii")
+
+        python_command = installer.shlex.quote(str(installer.RUNTIME_PYTHON))
+        self.assertIn(f"exec {python_command} -m arii.gui", gui)
+        self.assertIn(f"exec {python_command} -m arii", cli)
+        self.assertIn('"$@"', gui)
+        self.assertNotIn("export PATH=", gui)
+        self.assertNotIn("runtime/bin/arii-gui", gui)
+
+    def test_uninstaller_delegates_to_the_persisted_installer(self) -> None:
+        source = installer.uninstall_launcher()
+        self.assertIn("install_macos.py' --uninstall", source)
+        self.assertIn('"$@"', source)
+
+    def test_certificate_failures_are_recognised_through_urlerror(self) -> None:
+        certificate_error = ssl.SSLCertVerificationError(
+            1, "CERTIFICATE_VERIFY_FAILED"
+        )
+        wrapped = urllib.error.URLError(certificate_error)
+        self.assertTrue(installer.is_certificate_verification_error(wrapped))
+
+    def test_shell_validation_reports_invalid_launcher(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["/bin/sh", "-n", "/tmp/arii"],
+            returncode=2,
+            stdout="",
+            stderr="unexpected EOF",
+        )
+        with patch.object(installer.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(installer.InstallerError, "unexpected EOF"):
+                installer.verify_shell_syntax(Path("/tmp/arii"))
 
 
 if __name__ == "__main__":

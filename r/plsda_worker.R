@@ -1,5 +1,4 @@
 suppressPackageStartupMessages(library(jsonlite))
-suppressPackageStartupMessages(library(mixOmics))
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 2) stop("Uso: plsda_worker.R <job.json> <result.json>")
@@ -7,6 +6,22 @@ job <- fromJSON(
   paste(readLines(args[[1]], warn = FALSE, encoding = "UTF-8"), collapse = "\n"),
   simplifyVector = TRUE
 )
+
+script_argument <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+script_directory <- if (length(script_argument)) {
+  dirname(normalizePath(sub("^--file=", "", script_argument[[1]]), mustWork = TRUE))
+} else getwd()
+source_simpls_engine <- function() {
+  candidates <- c(
+    file.path(script_directory, "pls_engine.R"),
+    file.path(getwd(), "pls_engine.R"),
+    file.path(getwd(), "r", "pls_engine.R")
+  )
+  engine <- candidates[file.exists(candidates)][1]
+  if (is.na(engine)) stop("No se encontró pls_engine.R junto al motor R")
+  source(engine, local = FALSE)
+  simpls_require_package()
+}
 
 delimiter <- if (is.null(job$dataset$delimiter)) "," else as.character(job$dataset$delimiter)
 raw <- read.table(
@@ -39,6 +54,19 @@ classes <- as.character(job$classes[selected])
 y <- factor(classes)
 if (nlevels(y) < 2L) stop("PLS-DA requiere al menos dos clases")
 if (any(table(y) < 2L)) stop("Cada clase debe contener al menos dos muestras")
+model_engine <- if (!is.null(job$engine)) {
+  tolower(as.character(job$engine))
+} else {
+  "mixomics"
+}
+if (!model_engine %in% c("mixomics", "simpls")) {
+  stop("Motor estadístico no reconocido")
+}
+if (identical(model_engine, "simpls")) {
+  source_simpls_engine()
+} else {
+  suppressPackageStartupMessages(library(mixOmics))
+}
 biological_ids_all <- if (!is.null(job$biological_ids)) {
   as.character(job$biological_ids)
 } else rep("", length(job$classes))
@@ -204,28 +232,61 @@ if (any(vapply(validation_tasks, function(task) {
 expected_train_size <- min(vapply(
   validation_tasks, function(task) length(task$train_indices), integer(1)
 ))
-ncomp <- min(
-  as.integer(job$n_components),
+requested_ncomp <- as.integer(job$n_components)
+maximum_ncomp <- min(
   nrow(X_model) - 1L,
   ncol(X_model),
   expected_train_size - 1L
 )
-model <- mixOmics::plsda(X_model, y, ncomp = ncomp, scale = FALSE)
+if (!is.finite(requested_ncomp) || requested_ncomp < 1L) {
+  stop("El número de componentes solicitado no es válido")
+}
+if (requested_ncomp > maximum_ncomp) {
+  stop(sprintf(
+    "Se solicitaron %d componentes; la validación permite como máximo %d",
+    requested_ncomp, maximum_ncomp
+  ))
+}
+ncomp <- requested_ncomp
 component_names <- paste0("LV", seq_len(ncomp))
-colnames(model$variates$X) <- component_names
-colnames(model$loadings$X) <- component_names
-full_prediction_result <- predict(model, X_model, dist = "max.dist")
-full_prediction <- full_prediction_result$predict
 class_levels <- levels(y)
 Y_full <- 1 * outer(classes, class_levels, "==")
 colnames(Y_full) <- class_levels
+if (identical(model_engine, "simpls")) {
+  model <- simpls_fit(X_model, Y_full, ncomp = ncomp, scale_y = FALSE)
+  if (model$ncomp < ncomp) {
+    stop(sprintf(
+      "SIMPLS solo pudo estimar %d de %d componentes", model$ncomp, ncomp
+    ))
+  }
+  model_scores <- model$scores
+  model_loadings <- model$loadings
+  model_explained_variance <- model$explained_variance_x
+  colnames(model_scores) <- component_names
+  colnames(model_loadings) <- component_names
+  full_prediction <- simpls_predict_cube(model, X_model)
+  calibration_predictions <- simpls_classify_cube(full_prediction, class_levels)
+  engine_name <- "SIMPLS"
+  engine_version <- paste("pls", model$package_version)
+} else {
+  model <- mixOmics::plsda(X_model, y, ncomp = ncomp, scale = FALSE)
+  colnames(model$variates$X) <- component_names
+  colnames(model$loadings$X) <- component_names
+  model_scores <- model$variates$X
+  model_loadings <- model$loadings$X
+  model_explained_variance <- as.numeric(model$prop_expl_var$X)
+  full_prediction_result <- predict(model, X_model, dist = "max.dist")
+  full_prediction <- full_prediction_result$predict
+  calibration_predictions <- as.matrix(full_prediction_result$class$max.dist)
+  engine_name <- "mixOmics"
+  engine_version <- as.character(packageVersion("mixOmics"))
+}
 full_y_tss <- sum(sweep(Y_full, 2, colMeans(Y_full), "-") ^ 2)
 r2y <- vapply(seq_len(ncomp), function(component_index) {
   prediction_matrix <- full_prediction[, , component_index, drop = FALSE]
   dim(prediction_matrix) <- c(nrow(Y_full), ncol(Y_full))
   1 - sum((Y_full - prediction_matrix) ^ 2) / full_y_tss
 }, numeric(1))
-calibration_predictions <- as.matrix(full_prediction_result$class$max.dist)
 calibration_accuracy <- numeric(ncomp)
 calibration_ber <- numeric(ncomp)
 calibration_correct <- integer(ncomp)
@@ -264,7 +325,36 @@ cv_decision_count <- matrix(0L, nrow(X), ncomp)
 repeat_predictions <- lapply(seq_len(metric_repeats), function(index) {
   matrix(NA_character_, nrow(X), ncomp)
 })
-fold_tasks <- validation_tasks
+distributed_task_count <- suppressWarnings(as.integer(
+  Sys.getenv("ARII_DISTRIBUTED_TASKS", "1")
+))
+if (!is.finite(distributed_task_count) || distributed_task_count < 1L) {
+  distributed_task_count <- 1L
+}
+distributed_task_index <- suppressWarnings(as.integer(
+  Sys.getenv("ARII_DISTRIBUTED_INDEX", "0")
+))
+if (!is.finite(distributed_task_index) || distributed_task_index < 0L) {
+  distributed_task_index <- 0L
+}
+distributed_merge <- identical(Sys.getenv("ARII_DISTRIBUTED_MERGE", "0"), "1")
+distributed_cv <- validation_strategy %in% c("random_subsets", "monte_carlo") &&
+  distributed_task_count > 1L
+if (distributed_task_index >= distributed_task_count) {
+  stop("El índice de validación distribuida queda fuera del número de tareas")
+}
+all_fold_indices <- seq_along(validation_tasks)
+fold_indices <- if (distributed_cv && !distributed_merge) {
+  seq.int(
+    distributed_task_index + 1L,
+    length(validation_tasks),
+    by = distributed_task_count
+  )
+} else all_fold_indices
+if (!length(fold_indices)) {
+  stop("Una tarea distribuida no recibió ningún fold de validación")
+}
+fold_tasks <- validation_tasks[fold_indices]
 
 evaluate_fold <- function(task) {
   repeat_index <- task$repeat_index
@@ -277,10 +367,25 @@ evaluate_fold <- function(task) {
   )
   fold_y <- factor(classes[train_indices], levels = class_levels)
   fold_ncomp <- min(ncomp, nrow(fold$train) - 1L, ncol(fold$train))
-  fold_model <- mixOmics::plsda(fold$train, fold_y, ncomp = fold_ncomp, scale = FALSE)
-  prediction <- predict(fold_model, fold$test, dist = "max.dist")
-  predicted_matrix <- as.matrix(prediction$class$max.dist)
-  decisions <- prediction$predict[, , seq_len(fold_ncomp), drop = FALSE]
+  if (identical(model_engine, "simpls")) {
+    decisions <- simpls_fit_predict_cube(
+      fold$train, as.character(fold_y), fold$test, class_levels, fold_ncomp
+    )
+    if (dim(decisions)[[3]] < fold_ncomp) {
+      stop(sprintf(
+        "SIMPLS solo pudo estimar %d de %d componentes en un fold",
+        dim(decisions)[[3]], fold_ncomp
+      ))
+    }
+    predicted_matrix <- simpls_classify_cube(decisions, class_levels)
+  } else {
+    fold_model <- mixOmics::plsda(
+      fold$train, fold_y, ncomp = fold_ncomp, scale = FALSE
+    )
+    prediction <- predict(fold_model, fold$test, dist = "max.dist")
+    predicted_matrix <- as.matrix(prediction$class$max.dist)
+    decisions <- prediction$predict[, , seq_len(fold_ncomp), drop = FALSE]
+  }
   Y_train <- 1 * outer(classes[train_indices], class_levels, "==")
   Y_test <- 1 * outer(classes[test_indices], class_levels, "==")
   fold_y_tss <- sum(sweep(Y_test, 2, colMeans(Y_train), "-") ^ 2)
@@ -300,20 +405,69 @@ evaluate_fold <- function(task) {
 requested_workers <- suppressWarnings(as.integer(Sys.getenv("ARII_PARALLEL_WORKERS", "1")))
 if (!is.finite(requested_workers) || requested_workers < 1L) requested_workers <- 1L
 parallel_workers <- min(requested_workers, length(fold_tasks))
+distributed_tasks_used <- 1L
+workers_per_task <- parallel_workers
+distribution_contract <- list(
+  strategy = validation_strategy,
+  engine = model_engine,
+  seed = validation_seed,
+  components = ncomp,
+  total_folds = length(validation_tasks),
+  sample_names = sample_names,
+  classes = classes
+)
 message(sprintf("ARII_CV_PROGRESS: 0/%d; workers=%d", length(fold_tasks), parallel_workers))
-fold_results <- if (parallel_workers > 1L && .Platform$OS.type == "windows") {
+fold_results <- if (distributed_cv && distributed_merge) {
+  partial_directory <- dirname(normalizePath(args[[2]], mustWork = FALSE))
+  partial_files <- Sys.glob(file.path(partial_directory, "partial-result-*.rds"))
+  if (length(partial_files) != distributed_task_count) {
+    stop(sprintf(
+      "Se esperaban %d fragmentos de validación y se encontraron %d",
+      distributed_task_count, length(partial_files)
+    ))
+  }
+  bundles <- lapply(partial_files, readRDS)
+  task_indices <- vapply(bundles, function(bundle) bundle$task_index, integer(1))
+  if (!identical(sort(task_indices), seq.int(0L, distributed_task_count - 1L))) {
+    stop("Los fragmentos de validación tienen índices faltantes o duplicados")
+  }
+  if (any(!vapply(
+    bundles, function(bundle) identical(bundle$contract, distribution_contract),
+    logical(1)
+  ))) stop("Los fragmentos de validación no pertenecen al mismo modelo")
+  gathered_indices <- unlist(lapply(bundles, function(bundle) bundle$fold_indices))
+  gathered_results <- unlist(
+    lapply(bundles, function(bundle) bundle$fold_results), recursive = FALSE
+  )
+  ordering <- order(gathered_indices)
+  if (!identical(sort(gathered_indices), all_fold_indices)) {
+    stop("Los fragmentos no cubren cada fold exactamente una vez")
+  }
+  distributed_tasks_used <- distributed_task_count
+  workers_per_task <- vapply(bundles, function(bundle) bundle$workers, integer(1))
+  parallel_workers <- sum(workers_per_task)
+  gathered_results[ordering]
+} else if (parallel_workers > 1L && .Platform$OS.type == "windows") {
   cluster <- parallel::makeCluster(parallel_workers)
   tryCatch({
-    parallel::clusterExport(
-      cluster,
-      c("X", "classes", "class_levels", "ncomp", "job",
-        "preprocess", "evaluate_fold"),
-      envir = .GlobalEnv
+    export_names <- c(
+      "X", "classes", "class_levels", "ncomp", "job", "model_engine",
+      "preprocess", "evaluate_fold"
     )
-    parallel::clusterCall(cluster, function(name) {
-      suppressPackageStartupMessages(library(name, character.only = TRUE))
-      NULL
-    }, "mixOmics")
+    if (identical(model_engine, "simpls")) {
+      export_names <- c(
+        export_names, "simpls_require_package", "simpls_fit", "simpls_predict_cube",
+        "simpls_indicator_matrix", "simpls_fit_predict_cube",
+        "simpls_classify_cube"
+      )
+    }
+    parallel::clusterExport(cluster, export_names, envir = .GlobalEnv)
+    if (identical(model_engine, "mixomics")) {
+      parallel::clusterCall(cluster, function(name) {
+        suppressPackageStartupMessages(library(name, character.only = TRUE))
+        NULL
+      }, "mixOmics")
+    }
     parallel::parLapply(cluster, fold_tasks, evaluate_fold)
   }, finally = parallel::stopCluster(cluster))
 } else if (parallel_workers > 1L) {
@@ -325,6 +479,26 @@ fold_results <- if (parallel_workers > 1L && .Platform$OS.type == "windows") {
 failed_indices <- which(vapply(fold_results, inherits, logical(1), "try-error"))
 if (length(failed_indices) > 0L) {
   stop(sprintf("Falló la validación en los folds: %s", paste(failed_indices, collapse = ", ")))
+}
+if (distributed_cv && !distributed_merge) {
+  partial_rds <- sub("[.]json$", ".rds", args[[2]])
+  saveRDS(list(
+    contract = distribution_contract,
+    task_index = distributed_task_index,
+    task_count = distributed_task_count,
+    fold_indices = fold_indices,
+    fold_results = fold_results,
+    workers = parallel_workers
+  ), partial_rds, compress = FALSE)
+  write_json(list(
+    schema_version = "1.0",
+    status = "partial_cv_complete",
+    task_index = distributed_task_index,
+    task_count = distributed_task_count,
+    fold_indices = fold_indices,
+    result_rds = basename(partial_rds)
+  ), args[[2]], auto_unbox = TRUE, pretty = FALSE)
+  quit(save = "no", status = 0L)
 }
 
 for (record_index in seq_along(fold_results)) {
@@ -420,12 +594,12 @@ if (orthogonalized) {
 }
 
 build_candidate_model <- function(component_count) {
-  original_scores <- model$variates$X[, seq_len(component_count), drop = FALSE]
+  original_scores <- model_scores[, seq_len(component_count), drop = FALSE]
   if (!orthogonalized) {
     candidate_names <- paste0("LV", seq_len(component_count))
     candidate_scores <- original_scores
-    candidate_loadings <- model$loadings$X[, seq_len(component_count), drop = FALSE]
-    candidate_explained <- as.numeric(model$prop_expl_var$X[seq_len(component_count)])
+    candidate_loadings <- model_loadings[, seq_len(component_count), drop = FALSE]
+    candidate_explained <- model_explained_variance[seq_len(component_count)]
   } else {
     predictive_response <- full_prediction[, 2L, component_count]
     predictive_response <- predictive_response - mean(predictive_response)
@@ -500,8 +674,8 @@ result <- list(
   schema_version = "1.0",
   method = if (orthogonalized) "orthogonalized_plsda" else "plsda",
   engine = list(
-    name = "mixOmics",
-    version = as.character(packageVersion("mixOmics")),
+    name = engine_name,
+    version = engine_version,
     r_version = R.version.string
   ),
   dimensions = list(
@@ -555,11 +729,14 @@ result <- list(
       venetian_blinds = "grouped_venetian_blinds"
     ),
     validation_method = validation_strategy,
+    engine = model_engine,
     distance = "max.dist",
     repeats = repeats,
     data_splits = data_splits,
     submodels = length(validation_tasks),
     parallel_workers = parallel_workers,
+    distributed_tasks = distributed_tasks_used,
+    workers_per_task = workers_per_task,
     minimum_training_samples = expected_train_size,
     configured_train_fraction = if (validation_strategy == "monte_carlo") {
       train_fraction_requested
@@ -591,7 +768,7 @@ result <- list(
     calibration_auc_macro = rowMeans(calibration_auc, na.rm = TRUE),
     cv_auc_by_class = unname(cv_auc),
     cv_auc_macro = rowMeans(cv_auc, na.rm = TRUE),
-    r2x = cumsum(as.numeric(model$prop_expl_var$X)),
+    r2x = cumsum(model_explained_variance),
     r2y = r2y,
     q2y = 1 - q2y_press / q2y_tss,
     selection = list(
@@ -602,7 +779,7 @@ result <- list(
     ),
     calibration = list(
       truth = classes,
-      predicted = unname(as.matrix(full_prediction_result$class$max.dist)),
+      predicted = unname(calibration_predictions),
       decision_values = unname(full_prediction)
     ),
     confusion_matrices = confusion_output,

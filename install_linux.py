@@ -371,7 +371,7 @@ def install_scientific_runtime(*, force_reinstall: bool) -> None:
     if not specification.is_file():
         raise InstallerError(f"No se encontró la especificación de R: {specification}")
     download_micromamba()
-    print_step("Instalando el runtime privado de R y mixOmics")
+    print_step("Instalando el runtime privado de R, mixOmics y SIMPLS")
     if force_reinstall and RUNTIME_DIR.exists():
         shutil.rmtree(RUNTIME_DIR)
     operation = "install" if RSCRIPT.is_file() else "create"
@@ -439,7 +439,7 @@ Exec=/usr/local/bin/arii-gui
 Icon=arii
 Terminal=false
 Categories=Science;Education;
-Keywords=Arii;quimiometría;ómicos;PCA;PLS-DA;OPLS-DA;mixOmics;
+Keywords=Arii;quimiometría;ómicos;PCA;PLS-DA;OPLS-DA;mixOmics;SIMPLS;
 StartupNotify=true
 """
 

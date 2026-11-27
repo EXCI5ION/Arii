@@ -23,11 +23,14 @@ import os
 import platform
 import plistlib
 import re
+import shlex
 import shutil
+import ssl
 import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -42,8 +45,6 @@ RUNTIME_DIR = SUPPORT_DIR / "runtime"
 RUNTIME_PYTHON = RUNTIME_DIR / "bin/python"
 RUNTIME_PIP = RUNTIME_DIR / "bin/pip"
 RUNTIME_RSCRIPT = RUNTIME_DIR / "bin/Rscript"
-RUNTIME_CLI = RUNTIME_DIR / "bin/arii"
-RUNTIME_GUI = RUNTIME_DIR / "bin/arii-gui"
 
 MAMBA_ROOT = SUPPORT_DIR / "mamba"
 MICROMAMBA = SUPPORT_DIR / "tools/micromamba"
@@ -59,6 +60,7 @@ INFO_PLIST = APP_CONTENTS / "Info.plist"
 GLOBAL_CLI = Path("/usr/local/bin/arii")
 GLOBAL_GUI = Path("/usr/local/bin/arii-gui")
 UPDATER_COMMAND = Path("/usr/local/bin/arii-update")
+UNINSTALL_COMMAND = Path("/usr/local/bin/arii-uninstall")
 INSTALLED_INSTALLER = SUPPORT_DIR / "install_macos.py"
 PERSISTENT_CUSTOM_ICON = SUPPORT_DIR / "custom-icon.png"
 
@@ -85,6 +87,7 @@ RUNTIME_PACKAGES = (
     "pip",
     "r-base=4.5.3",
     "bioconductor-mixomics=6.34.0",
+    "r-pls=2.9_0",
     "r-jsonlite=2.0.0",
 )
 
@@ -186,12 +189,30 @@ def detect_macos_platform() -> tuple[str, str]:
 
 
 def require_system_tools() -> None:
-    missing = [name for name in ("git", "sips", "iconutil") if not shutil.which(name)]
+    required = ("git", "sips", "iconutil", "xcode-select")
+    missing = [name for name in required if not shutil.which(name)]
     if missing:
         names = ", ".join(missing)
         raise InstallerError(
             f"Faltan herramientas de macOS: {names}. Ejecute "
             "'xcode-select --install', complete la instalación y vuelva a intentarlo."
+        )
+
+    selection = subprocess.run(
+        [str(shutil.which("xcode-select")), "-p"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    developer_directory = Path(selection.stdout.strip())
+    if selection.returncode != 0 or not developer_directory.is_dir():
+        detail = selection.stderr.strip()
+        suffix = f" Detalle: {detail}" if detail else ""
+        raise InstallerError(
+            "Xcode Command Line Tools no está instalado completamente o no tiene "
+            "un directorio de desarrollo activo. Ejecute 'xcode-select --install', "
+            f"complete la instalación y vuelva a intentarlo.{suffix}"
         )
 
 
@@ -314,6 +335,30 @@ def checkout_release(tag: str) -> None:
     run(["git", "-C", str(SOURCE_DIR), "switch", "--detach", tag])
 
 
+def is_certificate_verification_error(exc: BaseException) -> bool:
+    """Recognise direct and urllib-wrapped TLS certificate failures."""
+
+    pending: list[BaseException] = [exc]
+    visited: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in visited:
+            continue
+        visited.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        if "CERTIFICATE_VERIFY_FAILED" in str(current).upper():
+            return True
+        for related in (
+            getattr(current, "reason", None),
+            current.__cause__,
+            current.__context__,
+        ):
+            if isinstance(related, BaseException):
+                pending.append(related)
+    return False
+
+
 def download_micromamba(conda_platform: str) -> None:
     installed_platform = ""
     if MICROMAMBA_PLATFORM_FILE.is_file():
@@ -342,7 +387,16 @@ def download_micromamba(conda_platform: str) -> None:
             with urllib.request.urlopen(request, timeout=120) as response:
                 with archive.open("wb") as destination:
                     shutil.copyfileobj(response, destination)
-        except OSError as exc:
+        except (OSError, urllib.error.URLError) as exc:
+            if is_certificate_verification_error(exc):
+                bootstrap_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+                raise InstallerError(
+                    "Python no pudo verificar el certificado HTTPS al descargar "
+                    "micromamba. Si instaló Python desde python.org, ejecute el "
+                    "archivo 'Install Certificates.command' de esa instalación "
+                    f"(por ejemplo: open '/Applications/Python {bootstrap_version}/"
+                    "Install Certificates.command') y vuelva a intentarlo."
+                ) from exc
             raise InstallerError("No se pudo descargar micromamba.") from exc
         actual_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
         if actual_sha256 != expected_sha256:
@@ -446,10 +500,6 @@ def install_python_application(
         command.append("--force-reinstall")
     command.extend(["--editable", str(SOURCE_DIR)])
     run(command)
-    if not (runtime_dir / "bin/arii").is_file() or not (
-        runtime_dir / "bin/arii-gui"
-    ).is_file():
-        raise InstallerError("La instalación Python no creó los ejecutables de Arii.")
 
 
 def validate_health_report(report: object) -> None:
@@ -476,7 +526,9 @@ def verify_candidate_runtime(runtime_dir: Path) -> None:
             (
                 "import arii, numpy, pyqtgraph, PySide6; "
                 "from PySide6.QtWidgets import QApplication; "
-                "app = QApplication([]); print(PySide6.__version__)"
+                "from arii.gui import MainWindow; "
+                "app = QApplication.instance() or QApplication([]); "
+                "window = MainWindow(); window.close(); print(PySide6.__version__)"
             ),
         ],
         env=environment,
@@ -549,13 +601,45 @@ def write_executable(path: Path, content: str) -> None:
     temporary.replace(path)
 
 
-def runtime_launcher(entrypoint: Path) -> str:
+def python_module_launcher(module: str) -> str:
     return (
         "#!/bin/sh\n"
-        f"export ARII_RSCRIPT='{RUNTIME_RSCRIPT}'\n"
-        f"export PATH='{RUNTIME_DIR / 'bin'}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n"
-        f"exec '{entrypoint}' \"$@\"\n"
+        f"export ARII_RSCRIPT={shlex.quote(str(RUNTIME_RSCRIPT))}\n"
+        f"exec {shlex.quote(str(RUNTIME_PYTHON))} -m {shlex.quote(module)} \"$@\"\n"
     )
+
+
+def updater_launcher() -> str:
+    return (
+        "#!/bin/sh\n"
+        "if [ \"$#\" -eq 0 ]; then\n"
+        "    set -- --update\n"
+        "fi\n"
+        f"exec {shlex.quote(str(RUNTIME_PYTHON))} "
+        f"{shlex.quote(str(INSTALLED_INSTALLER))} \"$@\"\n"
+    )
+
+
+def uninstall_launcher() -> str:
+    return (
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(RUNTIME_PYTHON))} "
+        f"{shlex.quote(str(INSTALLED_INSTALLER))} --uninstall \"$@\"\n"
+    )
+
+
+def verify_shell_syntax(path: Path) -> None:
+    result = subprocess.run(
+        ["/bin/sh", "-n", str(path)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        suffix = f": {detail}" if detail else ""
+        raise InstallerError(f"El lanzador {path} no tiene sintaxis shell válida{suffix}")
 
 
 def select_icon(custom_icon: Path | None) -> Path:
@@ -638,12 +722,12 @@ def install_integration(custom_icon: Path | None, version: str) -> None:
     print_step("Creando Arii.app y los comandos globales")
     APP_EXECUTABLE.parent.mkdir(parents=True, exist_ok=True)
     APP_RESOURCES.mkdir(parents=True, exist_ok=True)
-    write_executable(APP_EXECUTABLE, runtime_launcher(RUNTIME_GUI))
+    write_executable(APP_EXECUTABLE, python_module_launcher("arii.gui"))
     create_icns(select_icon(custom_icon), APP_ICON)
     write_info_plist(version)
 
-    write_executable(GLOBAL_CLI, runtime_launcher(RUNTIME_CLI))
-    write_executable(GLOBAL_GUI, runtime_launcher(APP_EXECUTABLE))
+    write_executable(GLOBAL_CLI, python_module_launcher("arii"))
+    write_executable(GLOBAL_GUI, python_module_launcher("arii.gui"))
 
     codesign = shutil.which("codesign")
     if codesign:
@@ -660,14 +744,8 @@ def install_updater() -> None:
     if source.resolve() != INSTALLED_INSTALLER.resolve():
         shutil.copy2(source, INSTALLED_INSTALLER)
     INSTALLED_INSTALLER.chmod(0o755)
-    write_executable(
-        UPDATER_COMMAND,
-        "#!/bin/sh\n"
-        "if [ \"$#\" -eq 0 ]; then\n"
-        "    set -- --update\n"
-        "fi\n"
-        f"exec '{RUNTIME_PYTHON}' '{INSTALLED_INSTALLER}' \"$@\"\n",
-    )
+    write_executable(UPDATER_COMMAND, updater_launcher())
+    write_executable(UNINSTALL_COMMAND, uninstall_launcher())
 
 
 def installed_version(*, quiet: bool = False) -> str:
@@ -686,13 +764,12 @@ def installation_matches_release(expected_tag: str) -> bool:
         SOURCE_DIR / ".git",
         RUNTIME_PYTHON,
         RUNTIME_RSCRIPT,
-        RUNTIME_CLI,
-        RUNTIME_GUI,
         APP_EXECUTABLE,
         INFO_PLIST,
         GLOBAL_CLI,
         GLOBAL_GUI,
         UPDATER_COMMAND,
+        UNINSTALL_COMMAND,
     )
     if not all(path.exists() for path in required):
         return False
@@ -731,6 +808,14 @@ def verify_installation(expected_tag: str, expected_platform: str) -> None:
     if version != expected:
         raise InstallerError(f"Se esperaba Arii {expected}, pero se instaló {version}.")
     verify_cocoa_plugin()
+    for launcher in (
+        APP_EXECUTABLE,
+        GLOBAL_CLI,
+        GLOBAL_GUI,
+        UPDATER_COMMAND,
+        UNINSTALL_COMMAND,
+    ):
+        verify_shell_syntax(launcher)
 
     health = output([str(GLOBAL_CLI), "r-health"])
     try:
@@ -742,6 +827,7 @@ def verify_installation(expected_tag: str, expected_platform: str) -> None:
     print(f"\nArii {version} se instaló correctamente para {expected_platform}.")
     print("Puede abrirlo desde Aplicaciones → Arii o ejecutar: arii-gui")
     print("Para actualizarlo: sudo arii-update")
+    print("Para desinstalarlo: sudo arii-uninstall")
 
 
 def restore_previous_release(previous_commit: str | None) -> None:
@@ -783,7 +869,7 @@ def confirm_uninstall(assume_yes: bool) -> None:
 def uninstall(assume_yes: bool) -> None:
     confirm_uninstall(assume_yes)
     print_step("Desinstalando Arii")
-    for path in (GLOBAL_CLI, GLOBAL_GUI, UPDATER_COMMAND):
+    for path in (GLOBAL_CLI, GLOBAL_GUI, UPDATER_COMMAND, UNINSTALL_COMMAND):
         path.unlink(missing_ok=True)
     if APP_BUNDLE.exists():
         shutil.rmtree(APP_BUNDLE)

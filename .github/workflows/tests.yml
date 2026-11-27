@@ -128,6 +128,7 @@ jobs:
           packages: |
             any::BiocManager
             any::jsonlite
+            any::pls
             bioc::mixOmics
 
       - name: Instalar Arii y dependencias de prueba
@@ -138,6 +139,7 @@ jobs:
           Rscript -e "cat(R.version.string, '\n');
           cat('Bioconductor', as.character(BiocManager::version()), '\n');
           cat('mixOmics', as.character(packageVersion('mixOmics')), '\n');
+          cat('pls', as.character(packageVersion('pls')), '\n');
           cat('jsonlite', as.character(packageVersion('jsonlite')), '\n')"
 
       - name: Ejecutar pruebas de workers R

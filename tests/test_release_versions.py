@@ -24,13 +24,13 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertNotIn("cluster/install-server.sh", application)
         self.assertIn("cluster/install-server.sh", cluster)
 
-    def test_current_cluster_runtime_remains_at_published_version(self) -> None:
+    def test_current_cluster_runtime_declares_the_next_scientific_version(self) -> None:
         cluster = check_release_version.declared_cluster_versions(PROJECT_ROOT)
-        self.assertEqual(set(cluster.values()), {"1.0.0"})
+        self.assertEqual(set(cluster.values()), {"1.1.0"})
 
     def test_about_dialog_and_citation_share_release_date(self) -> None:
         dates = check_release_version.declared_release_dates(PROJECT_ROOT)
-        self.assertEqual(set(dates.values()), {"2026-11-13"})
+        self.assertEqual(set(dates.values()), {"2026-11-26"})
 
 
 if __name__ == "__main__":

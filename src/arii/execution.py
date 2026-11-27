@@ -282,3 +282,109 @@ class SlurmBackend:
             result_path=str(remote_directory / result_name),
             log_path=str(log_path), script="\n".join(script_lines),
         )
+
+    def build_plsda_cv_chunk_submission(
+        self, job_id: str, resources: SlurmResources,
+        task_index: int, task_count: int,
+    ) -> SlurmSubmission:
+        """Build one independent shard of a distributed PLS-DA CV run."""
+
+        if not 0 <= task_index < task_count <= 64:
+            raise ValueError("Índices de distribución Slurm no válidos")
+        if not self._safe_token.fullmatch(job_id):
+            raise ValueError("Identificador de trabajo no válido")
+        remote_directory = PurePosixPath(
+            self.profile.remote_workspace, "jobs", job_id
+        )
+        log_path = remote_directory / "slurm-%j.log"
+        hours, minutes = divmod(resources.walltime_minutes, 60)
+        directives = [
+            f"#SBATCH --job-name=arii-{job_id[:52]}-{task_index}",
+            f"#SBATCH --cpus-per-task={resources.cpus}",
+            f"#SBATCH --mem={resources.memory_mb}M",
+            f"#SBATCH --time={hours:02d}:{minutes:02d}:00",
+            f"#SBATCH --output={log_path}",
+        ]
+        for option, value in (
+            ("account", self.profile.account),
+            ("partition", self.profile.partition), ("qos", self.profile.qos),
+        ):
+            if value:
+                directives.append(f"#SBATCH --{option}={value}")
+        result_name = f"partial-result-{task_index}.json"
+        rds_name = f"partial-result-{task_index}.rds"
+        rscript = shlex.quote(
+            self.profile.rscript_path
+            or str(PurePosixPath(
+                self.profile.remote_workspace, "runtime", "envs",
+                "arii-r-2026.08", "bin", "Rscript",
+            ))
+        )
+        script_lines = [
+            "#!/bin/bash", *directives, "set -eu", 'cd -- "$SLURM_SUBMIT_DIR"',
+            'export ARII_PARALLEL_WORKERS="${SLURM_CPUS_PER_TASK:-1}"',
+            f"export ARII_DISTRIBUTED_TASKS={task_count}",
+            f"export ARII_DISTRIBUTED_INDEX={task_index}",
+            "export OMP_NUM_THREADS=1", "export OPENBLAS_NUM_THREADS=1",
+            "export MKL_NUM_THREADS=1",
+            f"{rscript} plsda_worker.R job.json {result_name}",
+            f"test -s {result_name}", f"test -s {rds_name}",
+            f"chmod 600 {result_name} {rds_name}", "",
+        ]
+        return SlurmSubmission(
+            remote_directory=str(remote_directory),
+            script_path=str(remote_directory / f"submit-{task_index}.sbatch"),
+            result_path=str(remote_directory / result_name),
+            log_path=str(log_path), script="\n".join(script_lines),
+        )
+
+    def build_plsda_cv_merge_submission(
+        self, job_id: str, resources: SlurmResources, task_count: int,
+    ) -> SlurmSubmission:
+        """Build the final deterministic merge job for distributed PLS-DA CV."""
+
+        if not 2 <= task_count <= 64:
+            raise ValueError("La fusión distribuida requiere al menos dos tareas")
+        if not self._safe_token.fullmatch(job_id):
+            raise ValueError("Identificador de trabajo no válido")
+        remote_directory = PurePosixPath(
+            self.profile.remote_workspace, "jobs", job_id
+        )
+        log_path = remote_directory / "slurm-%j.log"
+        hours, minutes = divmod(resources.walltime_minutes, 60)
+        directives = [
+            f"#SBATCH --job-name=arii-{job_id[:52]}-merge",
+            "#SBATCH --cpus-per-task=1",
+            f"#SBATCH --mem={resources.memory_mb}M",
+            f"#SBATCH --time={hours:02d}:{minutes:02d}:00",
+            f"#SBATCH --output={log_path}",
+        ]
+        for option, value in (
+            ("account", self.profile.account),
+            ("partition", self.profile.partition), ("qos", self.profile.qos),
+        ):
+            if value:
+                directives.append(f"#SBATCH --{option}={value}")
+        rscript = shlex.quote(
+            self.profile.rscript_path
+            or str(PurePosixPath(
+                self.profile.remote_workspace, "runtime", "envs",
+                "arii-r-2026.08", "bin", "Rscript",
+            ))
+        )
+        script_lines = [
+            "#!/bin/bash", *directives, "set -eu", 'cd -- "$SLURM_SUBMIT_DIR"',
+            "export ARII_PARALLEL_WORKERS=1",
+            f"export ARII_DISTRIBUTED_TASKS={task_count}",
+            "export ARII_DISTRIBUTED_MERGE=1",
+            "export OMP_NUM_THREADS=1", "export OPENBLAS_NUM_THREADS=1",
+            "export MKL_NUM_THREADS=1",
+            f"{rscript} plsda_worker.R job.json result.json",
+            "test -s result.json", "chmod 600 result.json", "",
+        ]
+        return SlurmSubmission(
+            remote_directory=str(remote_directory),
+            script_path=str(remote_directory / "submit-merge.sbatch"),
+            result_path=str(remote_directory / "result.json"),
+            log_path=str(log_path), script="\n".join(script_lines),
+        )

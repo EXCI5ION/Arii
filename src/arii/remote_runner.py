@@ -16,6 +16,7 @@ import numpy as np
 
 from arii.execution import ClusterProfile, SlurmBackend, SlurmResources
 from arii.residual_tests import build_residual_tests
+from arii.resources import worker_support_paths
 from arii.ssh_access import connect_managed
 
 
@@ -23,6 +24,22 @@ SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 KNOWN_WORKERS = {
     "pca_worker.R", "plsda_worker.R", "permutation_worker.R", "health.R",
 }
+
+
+def distributed_cv_task_count(job: dict, maximum_nodes: int) -> int:
+    """Return useful Slurm shards for expensive, repeat-based CV strategies."""
+
+    validation = job.get("validation") or {}
+    strategy = str(validation.get("strategy", "random_subsets"))
+    if strategy not in {"random_subsets", "monte_carlo"} or maximum_nodes <= 1:
+        return 1
+    repeats = max(1, int(validation.get("repeats", 1)))
+    if strategy == "random_subsets":
+        data_splits = max(2, int(validation.get("data_splits", 5)))
+        submodels = repeats * data_splits
+    else:
+        submodels = repeats
+    return max(1, min(int(maximum_nodes), submodels))
 
 
 def launcher_command(
@@ -213,21 +230,38 @@ class PuttySlurmRunner:
     def run(self) -> None:
         import shlex
 
-        distributed = self.worker.name == "permutation_worker.R" and self.resources.nodes > 1
+        job_payload = json.loads(self.job.read_text(encoding="utf-8"))
+        permutation_distributed = (
+            self.worker.name == "permutation_worker.R" and self.resources.nodes > 1
+        )
+        cv_task_count = (
+            distributed_cv_task_count(job_payload, self.resources.nodes)
+            if self.worker.name == "plsda_worker.R" else 1
+        )
+        cv_distributed = self.worker.name == "plsda_worker.R" and cv_task_count > 1
         backend = SlurmBackend(self.profile)
         submissions = (
             [backend.build_permutation_chunk_submission(
                 self.job_id, self.resources, index, self.resources.nodes
             ) for index in range(self.resources.nodes)]
-            if distributed else
+            if permutation_distributed else
+            [backend.build_plsda_cv_chunk_submission(
+                self.job_id, self.resources, index, cv_task_count
+            ) for index in range(cv_task_count)]
+            if cv_distributed else
             [backend.build_submission(self.job_id, self.worker.name, self.resources)]
+        )
+        merge_submission = (
+            backend.build_plsda_cv_merge_submission(
+                self.job_id, self.resources, cv_task_count
+            )
+            if cv_distributed else None
         )
         remote_q = shlex.quote(self.remote_directory)
         _status("Comprobando la conexión y preparando la carpeta remota…")
         self._plink(f"install -d -m 700 -- {remote_q}")
         with tempfile.TemporaryDirectory(prefix="arii-remote-") as directory:
             staging = Path(directory)
-            job_payload = json.loads(self.job.read_text(encoding="utf-8"))
             job_payload.setdefault("dataset", {})["path"] = "dataset.csv"
             staged_job = staging / "job.json"
             staged_job.write_text(
@@ -237,11 +271,20 @@ class PuttySlurmRunner:
             self._upload(self.dataset, "dataset.csv")
             self._upload(staged_job, "job.json")
             self._upload(self.worker, self.worker.name)
+            for support_file in worker_support_paths(self.worker.name):
+                self._upload(support_file, support_file.name)
             for submission in submissions:
                 script_name = PurePosixPath(submission.script_path).name
                 staged_script = staging / script_name
                 staged_script.write_text(
                     submission.script, encoding="utf-8", newline="\n"
+                )
+                self._upload(staged_script, script_name)
+            if merge_submission is not None:
+                script_name = PurePosixPath(merge_submission.script_path).name
+                staged_script = staging / script_name
+                staged_script.write_text(
+                    merge_submission.script, encoding="utf-8", newline="\n"
                 )
                 self._upload(staged_script, script_name)
 
@@ -266,29 +309,53 @@ class PuttySlurmRunner:
                 self._plink("scancel " + " ".join(slurm_ids), check=False)
             raise
         slurm_id = slurm_ids[0]
-        effective_nodes = self.resources.nodes if distributed else 1
+        effective_nodes = (
+            self.resources.nodes if permutation_distributed else
+            cv_task_count if cv_distributed else 1
+        )
         _status(
             f"Trabajo(s) Slurm {', '.join(slurm_ids)} enviado(s) con "
             f"hasta {effective_nodes} nodo(s) × {self.resources.cpus} CPU; "
             "esperando recursos…"
         )
-        last_state = ""
-        while True:
-            polled = self._plink(
-                f"squeue -h -j {','.join(slurm_ids)} -o '%i|%T|%M|%R'", check=False
+        def wait_for_jobs(job_ids: list[str]) -> None:
+            last_state = ""
+            while True:
+                polled = self._plink(
+                    f"squeue -h -j {','.join(job_ids)} -o '%i|%T|%M|%R'",
+                    check=False,
+                )
+                lines = polled.stdout.strip()
+                if not lines:
+                    return
+                if lines != last_state:
+                    compact = "; ".join(lines.splitlines())
+                    _status(f"Slurm: {compact}")
+                    last_state = lines
+                time.sleep(2)
+
+        wait_for_jobs(slurm_ids)
+        if merge_submission is not None:
+            _status("Los bloques de validación terminaron; reuniendo el modelo…")
+            merge_name = PurePosixPath(merge_submission.script_path).name
+            submitted = self._plink(
+                f"cd -- {remote_q} && sbatch --parsable {merge_name}"
             )
-            lines = polled.stdout.strip()
-            if not lines:
-                break
-            if lines != last_state:
-                compact = "; ".join(lines.splitlines())
-                _status(f"Slurm: {compact}")
-                last_state = lines
-            time.sleep(2)
+            match = re.search(r"(?m)^(\d+)(?:;[^\s]+)?$", submitted.stdout.strip())
+            if not match:
+                raise RuntimeError(
+                    f"Slurm no devolvió un JOBID de fusión válido: "
+                    f"{submitted.stdout.strip()}"
+                )
+            merge_id = match.group(1)
+            slurm_ids.append(merge_id)
+            slurm_id = merge_id
+            _status(f"Trabajo Slurm {merge_id} reuniendo {cv_task_count} bloques…")
+            wait_for_jobs([merge_id])
 
         _status("El cálculo terminó; recuperando el resultado…")
         self.result.parent.mkdir(parents=True, exist_ok=True)
-        if distributed:
+        if permutation_distributed:
             partial_paths: list[Path] = []
             try:
                 for index in range(self.resources.nodes):

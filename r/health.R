@@ -1,6 +1,6 @@
 suppressPackageStartupMessages(library(jsonlite))
 
-packages <- c("mixOmics", "jsonlite")
+packages <- c("mixOmics", "pls", "jsonlite")
 package_info <- lapply(packages, function(package_name) {
   installed <- requireNamespace(package_name, quietly = TRUE)
   list(

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.0",
     [Parameter(Mandatory = $true)]
     [string]$ExplicitLock,
     [string]$OutputDirectory = "build\cluster-release-kit",
@@ -58,6 +58,8 @@ $copies = @{
     "LICENSE" = "payload\LICENSE"
     "THIRD_PARTY_NOTICES.md" = "payload\THIRD_PARTY_NOTICES.md"
     "r\pca_worker.R" = "smoke\pca_worker.R"
+    "r\plsda_worker.R" = "smoke\plsda_worker.R"
+    "r\pls_engine.R" = "smoke\pls_engine.R"
 }
 foreach ($entry in $copies.GetEnumerator()) {
     $destination = Join-Path $kitRoot $entry.Value
@@ -110,6 +112,18 @@ $job = @{
 $job | ConvertTo-Json -Depth 6 | Set-Content `
     -LiteralPath (Join-Path $smoke "job.json") -Encoding utf8NoBOM
 
+$plsJob = $job.Clone()
+$plsJob["engine"] = "simpls"
+$plsJob["validation"] = @{
+    strategy = "random_subsets"
+    repeats = 1
+    data_splits = 2
+    train_fraction = 0.8
+    seed = 1234
+}
+$plsJob | ConvertTo-Json -Depth 6 | Set-Content `
+    -LiteralPath (Join-Path $smoke "pls-job.json") -Encoding utf8NoBOM
+
 $instructions = @"
 # Construcción del runtime Arii $Version
 
@@ -130,7 +144,7 @@ Cuando termine correctamente:
 VALIDATE_JOB=`$(sbatch --parsable validate-runtime.sbatch)
 SMOKE_JOB=`$(sbatch --parsable smoke-runtime.sbatch)
 AUDIT_JOB=`$(sbatch --parsable audit-runtime.sbatch)
-echo "Validación: `$VALIDATE_JOB | PCA: `$SMOKE_JOB | Auditoría: `$AUDIT_JOB"
+echo "Validación: `$VALIDATE_JOB | PCA/SIMPLS: `$SMOKE_JOB | Auditoría: `$AUDIT_JOB"
 ``````
 
 El artefacto final y su checksum quedarán en ```$HOME/arii/releases``.

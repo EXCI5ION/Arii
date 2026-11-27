@@ -19,6 +19,10 @@ cluster/smoke/*
 !cluster/smoke/submit.sbatch
 *.spec.local
 *.tex
-!docs/main.tex
+*.tex.bck
+!docs/manual.tex
 !docs/scientific_documentation.tex
 tmp/
+# Laboratorio privado de benchmarks SIMPLS/OPLS-DA. Contiene datasets,
+# evidencias del clúster, resultados y notas para posible publicación futura.
+experiments/simpls/

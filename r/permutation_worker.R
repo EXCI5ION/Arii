@@ -11,7 +11,35 @@ method <- as.character(job$method)
 if (!method %in% c("plsda", "orthogonalized_plsda")) {
   stop("El test de permutaciones requiere PLS-DA u OPLS-DA")
 }
-suppressPackageStartupMessages(library(mixOmics))
+
+model_engine <- if (!is.null(job$engine)) {
+  tolower(as.character(job$engine))
+} else {
+  "mixomics"
+}
+if (!model_engine %in% c("mixomics", "simpls")) {
+  stop("Motor estadístico no reconocido")
+}
+script_argument <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+script_directory <- if (length(script_argument)) {
+  dirname(normalizePath(sub("^--file=", "", script_argument[[1]]), mustWork = TRUE))
+} else getwd()
+source_simpls_engine <- function() {
+  candidates <- c(
+    file.path(script_directory, "pls_engine.R"),
+    file.path(getwd(), "pls_engine.R"),
+    file.path(getwd(), "r", "pls_engine.R")
+  )
+  engine <- candidates[file.exists(candidates)][1]
+  if (is.na(engine)) stop("No se encontró pls_engine.R junto al motor R")
+  source(engine, local = FALSE)
+  simpls_require_package()
+}
+if (identical(model_engine, "mixomics")) {
+  suppressPackageStartupMessages(library(mixOmics))
+} else {
+  source_simpls_engine()
+}
 
 delimiter <- if (is.null(job$dataset$delimiter)) "," else as.character(job$dataset$delimiter)
 raw <- read.table(
@@ -110,11 +138,23 @@ indicator_matrix <- function(response) {
 evaluate_pls <- function(response) {
   full <- full_preprocessed
   y <- factor(response, levels = class_levels)
-  component_count <- min(
-    as.integer(job$current_components), nrow(full$train) - 1L, ncol(full$train)
-  )
-  model <- mixOmics::plsda(full$train, y, ncomp = component_count, scale = FALSE)
-  full_prediction <- predict(model, full$train, dist = "max.dist")$predict[, , component_count]
+  component_count <- as.integer(job$current_components)
+  if (identical(model_engine, "simpls")) {
+    full_cube <- simpls_fit_predict_cube(
+      full$train, as.character(y), full$train, class_levels, component_count
+    )
+    if (dim(full_cube)[[3]] < component_count) {
+      stop("SIMPLS no pudo estimar la complejidad actual en el modelo completo")
+    }
+    full_prediction <- full_cube[, , component_count]
+  } else {
+    model <- mixOmics::plsda(
+      full$train, y, ncomp = component_count, scale = FALSE
+    )
+    full_prediction <- predict(
+      model, full$train, dist = "max.dist"
+    )$predict[, , component_count]
+  }
   full_prediction <- matrix(full_prediction, nrow = nrow(X), ncol = length(class_levels))
   Y_full <- indicator_matrix(response)
   full_tss <- sum(sweep(Y_full, 2, colMeans(Y_full), "-") ^ 2)
@@ -132,15 +172,28 @@ evaluate_pls <- function(response) {
     test_indices <- task$test_indices
     train_indices <- task$train_indices
     fold <- prepared_folds[[task_index]]
-    fold_components <- min(component_count, nrow(fold$train) - 1L, ncol(fold$train))
-    fold_model <- mixOmics::plsda(
-      fold$train, factor(response[train_indices], levels = class_levels),
-      ncomp = fold_components, scale = FALSE
-    )
-    prediction <- predict(fold_model, fold$test, dist = "max.dist")
-    repeat_predictions[[task$repeat_index]][test_indices] <-
-      as.matrix(prediction$class$max.dist)[, fold_components]
-    decisions <- prediction$predict[, , fold_components]
+    fold_components <- component_count
+    if (identical(model_engine, "simpls")) {
+      cube <- simpls_fit_predict_cube(
+        fold$train, response[train_indices], fold$test,
+        class_levels, fold_components
+      )
+      if (dim(cube)[[3]] < fold_components) {
+        stop("SIMPLS no pudo estimar la complejidad actual en un fold")
+      }
+      decisions <- cube[, , fold_components]
+      repeat_predictions[[task$repeat_index]][test_indices] <-
+        simpls_classify_cube(cube, class_levels)[, fold_components]
+    } else {
+      fold_model <- mixOmics::plsda(
+        fold$train, factor(response[train_indices], levels = class_levels),
+        ncomp = fold_components, scale = FALSE
+      )
+      prediction <- predict(fold_model, fold$test, dist = "max.dist")
+      repeat_predictions[[task$repeat_index]][test_indices] <-
+        as.matrix(prediction$class$max.dist)[, fold_components]
+      decisions <- prediction$predict[, , fold_components]
+    }
     decisions <- matrix(decisions, nrow = length(test_indices), ncol = length(class_levels))
     decision_sum[test_indices, ] <- decision_sum[test_indices, , drop = FALSE] + decisions
     decision_count[test_indices] <- decision_count[test_indices] + 1L
@@ -272,6 +325,23 @@ prepared_folds <- lapply(validation_tasks, function(task) {
     X[task$train_indices, , drop = FALSE], X[task$test_indices, , drop = FALSE]
   )
 })
+requested_components <- as.integer(job$current_components)
+maximum_components <- min(c(
+  nrow(full_preprocessed$train) - 1L,
+  ncol(full_preprocessed$train),
+  vapply(prepared_folds, function(fold) {
+    min(nrow(fold$train) - 1L, ncol(fold$train))
+  }, integer(1))
+))
+if (!is.finite(requested_components) || requested_components < 1L) {
+  stop("El número de componentes actual no es válido")
+}
+if (requested_components > maximum_components) {
+  stop(sprintf(
+    "El modelo actual usa %d componentes; la validación permite como máximo %d",
+    requested_components, maximum_components
+  ))
+}
 
 response_is_estimable <- function(response) {
   all(vapply(validation_tasks, function(task) {
@@ -349,11 +419,13 @@ evaluated <- if (parallel_workers > 1L && .Platform$OS.type == "windows") {
   cluster <- parallel::makeCluster(parallel_workers)
   tryCatch({
     parallel::clusterExport(cluster, export_names, envir = .GlobalEnv)
-    package_name <- "mixOmics"
-    parallel::clusterCall(cluster, function(name) {
-      suppressPackageStartupMessages(library(name, character.only = TRUE))
-      NULL
-    }, package_name)
+    if (identical(model_engine, "mixomics")) {
+      package_name <- "mixOmics"
+      parallel::clusterCall(cluster, function(name) {
+        suppressPackageStartupMessages(library(name, character.only = TRUE))
+        NULL
+      }, package_name)
+    }
     parallel::parLapply(cluster, permutation_indices, evaluate_permutation)
   }, finally = parallel::stopCluster(cluster))
 } else if (parallel_workers > 1L) {
@@ -570,6 +642,7 @@ result <- list(
       venetian_blinds = "grouped_venetian_blinds"
     ),
     validation_method = validation_strategy,
+    engine = model_engine,
     repeats = repeats, data_splits = data_splits,
     submodels_per_permutation = length(validation_tasks),
     fold_policy = "fixed_and_reused_across_observed_and_permuted_responses",

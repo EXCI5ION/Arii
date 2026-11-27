@@ -37,8 +37,9 @@ grandes. Nunca escribe fuera de la carpeta remota configurada.
 ## ¿Hay que instalar R?
 
 R debe existir en los **nodos de cálculo**, no solamente en el servidor de
-acceso. Para el runtime remoto aprobado hacen falta `mixOmics`, `jsonlite` y sus
-dependencias. OPLS-DA permanece basado en `mixOmics` y no requiere `ropls`.
+acceso. Para el runtime remoto aprobado hacen falta `mixOmics`, `pls`, `jsonlite`
+y sus dependencias. OPLS-DA usa el motor PLS-DA elegido y la rotación posterior
+de Arii; no requiere `ropls`.
 Hay tres estrategias posibles:
 
 1. **R y paquetes administrados por el clúster.** Es la opción más sencilla si
@@ -61,9 +62,10 @@ El usuario lo descomprime una vez en una carpeta versionada, ejecuta
 contenedor Apptainer continúa siendo una alternativa futura para instituciones
 que prefieran imágenes administradas.
 
-El runtime remoto tiene un ciclo de versión independiente del escritorio. Arii
-1.1.0 envía sus workers actuales con cada trabajo y continúa utilizando el
-runtime 1.0.0 para proporcionar R, `mixOmics`, `jsonlite` y sus dependencias.
+El runtime remoto tiene un ciclo de versión independiente del escritorio. El
+flujo con dos motores requiere runtime 1.1.0 o posterior para proporcionar R,
+`mixOmics`, `pls`, `jsonlite` y sus dependencias. El runtime 1.0.0 publicado no
+incluye `pls` y sólo admite el flujo anterior basado en `mixOmics`.
 
 La extracción inicial puede tardar decenas de minutos cuando `$HOME` reside en
 NFS, aunque el archivo comprimido mida bastante menos que el entorno instalado.
@@ -124,8 +126,9 @@ Arii y no requieren PuTTY ni Pageant.
 Los campos opcionales pueden dejarse vacíos: Slurm aplicará los valores
 predeterminados del centro.
 
-Solicitar más CPU no acelera por sí solo un programa secuencial. Arii distribuye
-los folds PLS-DA y las respuestas permutadas entre los CPU solicitados, limita a
+Solicitar más CPU no acelera por sí solo un programa secuencial. Para ambos
+motores, Arii distribuye los folds de Random subsets y Monte Carlo y las
+respuestas permutadas entre los CPU solicitados, limita a
 un hilo las bibliotecas BLAS y conserva semillas reproducibles. Las permutaciones
 pueden dividirse además entre varios trabajos Slurm y reunirse automáticamente.
 Esta alternativa funciona incluso en centros donde `srun` multinodo no puede

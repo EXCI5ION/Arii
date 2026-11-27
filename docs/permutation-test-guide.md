@@ -1,7 +1,7 @@
-# Nota técnica provisional: test de permutaciones
+# Test de permutaciones de Arii
 
-Esta nota documenta la implementación actual de Arii. Se integrará y ampliará
-en la documentación oficial cuando se cierre la primera versión *single-omics*.
+Esta nota amplía la implementación descrita en la documentación científica de
+Arii 1.2.0 y sirve como guía de interpretación de sus vistas y estadísticas.
 
 ## Qué pregunta responde
 
@@ -13,12 +13,18 @@ obtenida por azar dentro del diseño disponible.
 
 Las etiquetas se permutan por unidad de intercambio. Si se informó un
 `biological_id`, sus réplicas se mantienen juntas; en caso contrario la unidad
-es la muestra. Después de cada permutación se repite el mismo esquema Random
-Subsets estratificado empleado para evaluar el modelo. El modelo observado y las
+es la muestra. Después de cada permutación se repite el mismo esquema de
+validación configurado para evaluar el modelo. El modelo observado y las
 respuestas permutadas se evalúan sobre la misma lista de particiones. Mantener
 fijos los conjuntos externos reduce el ruido debido al remuestreo y permite una
 comparación pareada. Una permutación que dejara un entrenamiento sin alguna
 clase se descarta y se vuelve a generar.
+
+El motor forma parte de la hipótesis evaluada. Arii usa exclusivamente el motor
+seleccionado —`mixOmics` o SIMPLS mediante `pls::simpls.fit`— tanto para el
+modelo observado como para cada respuesta permutada. No ajusta ambos motores ni
+usa uno para el modelo y otro para la validación. Por ello, cambiar de motor
+requiere ejecutar un test nuevo.
 
 ## Métricas y p empírico
 
@@ -109,7 +115,10 @@ test y las métricas y contrastes comparten predicciones.
 
 En Slurm, las permutaciones se reparten entre los CPU solicitados y, cuando se
 configura más de un nodo, entre varios trabajos independientes que Arii reúne por
-índice. En Windows se utilizan procesos R independientes. Cada permutación recibe
-semillas separadas para el intercambio de etiquetas y para su validación, por lo
-que cambiar la cantidad de CPU o nodos no cambia respuestas permutadas, métricas
-ni valores p.
+índice. La fusión comprueba que los bloques compartan método, semilla, unidad de
+intercambio, validación, motor, modo, cantidad total de permutaciones y resultado
+observado, y rechaza índices ausentes, duplicados o fuera de rango. En Windows se
+utilizan procesos R independientes. Cada permutación recibe semillas separadas
+para el intercambio de etiquetas y para su validación, por lo que cambiar la
+cantidad de CPU o nodos no cambia respuestas permutadas, métricas ni valores p,
+salvo posibles diferencias de redondeo dentro de tolerancias numéricas.

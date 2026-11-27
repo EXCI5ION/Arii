@@ -16,11 +16,15 @@ from arii.domain import AnalysisSpec, DatasetSpec, ValidationSpec
 from arii.execution import (
     ClusterProfile, LocalRBackend, RJob, SlurmBackend, SlurmResources,
 )
-from arii.remote_runner import launcher_command, merge_permutation_results
+from arii.remote_runner import (
+    distributed_cv_task_count,
+    launcher_command,
+    merge_permutation_results,
+)
 from arii.residual_tests import build_residual_tests, paired_residual_tests
 from arii.system_resources import SystemResources, recommended_workers
 from arii.r_bridge import find_rscript, r_subprocess_environment
-from arii.resources import asset_path, worker_path
+from arii.resources import asset_path, worker_path, worker_support_paths
 from arii.project_file import fingerprint_file, load_project, save_project
 from arii.metadata import export_metadata_template, import_metadata
 from arii.export_results import export_numeric_results, export_plsda_results
@@ -61,6 +65,14 @@ class RemoteRunnerCommandTests(unittest.TestCase):
 class PackagedResourceTests(unittest.TestCase):
     def test_source_workers_and_icon_are_resolved(self) -> None:
         self.assertEqual(worker_path("pca_worker.R").name, "pca_worker.R")
+        self.assertEqual(
+            [path.name for path in worker_support_paths("permutation_worker.R")],
+            ["pls_engine.R"],
+        )
+        self.assertEqual(
+            [path.name for path in worker_support_paths("plsda_worker.R")],
+            ["pls_engine.R"],
+        )
         self.assertEqual(asset_path("icons/arii-256.png").name, "arii-256.png")
 
     def test_unknown_worker_is_rejected(self) -> None:
@@ -231,6 +243,41 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertIn("ARII_DISTRIBUTED_TASKS=3", submission.script)
         self.assertIn("ARII_DISTRIBUTED_INDEX=1", submission.script)
         self.assertIn("partial-result-1.json", submission.script)
+
+    def test_distributed_cv_only_uses_repeat_based_strategies(self) -> None:
+        self.assertEqual(distributed_cv_task_count({
+            "validation": {
+                "strategy": "random_subsets", "repeats": 20, "data_splits": 5,
+            }
+        }, 5), 5)
+        self.assertEqual(distributed_cv_task_count({
+            "validation": {"strategy": "monte_carlo", "repeats": 3}
+        }, 5), 3)
+        for strategy in ("leave_one_out", "venetian_blinds"):
+            self.assertEqual(distributed_cv_task_count({
+                "validation": {"strategy": strategy, "repeats": 100}
+            }, 5), 1)
+
+    def test_distributed_cv_builds_shards_and_deterministic_merge(self) -> None:
+        profile = ClusterProfile(
+            profile_id="cluster", display_name="Clúster", host="host",
+            username="user", scheduler="slurm", remote_workspace="/work/user/arii",
+            partition="cpu",
+        )
+        backend = SlurmBackend(profile)
+        resources = SlurmResources(cpus=8, nodes=3, memory_mb=12000)
+        shard = backend.build_plsda_cv_chunk_submission(
+            "cv-1", resources, task_index=1, task_count=3
+        )
+        self.assertIn("ARII_DISTRIBUTED_TASKS=3", shard.script)
+        self.assertIn("ARII_DISTRIBUTED_INDEX=1", shard.script)
+        self.assertIn("partial-result-1.rds", shard.script)
+        merge = backend.build_plsda_cv_merge_submission(
+            "cv-1", resources, task_count=3
+        )
+        self.assertIn("ARII_DISTRIBUTED_MERGE=1", merge.script)
+        self.assertIn("plsda_worker.R job.json result.json", merge.script)
+        self.assertIn("#SBATCH --cpus-per-task=1", merge.script)
 
     def test_merges_distributed_permutations_in_original_order(self) -> None:
         def partial(indices, values, task):
@@ -601,7 +648,10 @@ class PcaWorkerTests(unittest.TestCase):
                         "biological_ids": ["A1", "A1", "A2", "A2", "B1", "B1", "B2", "B2"],
                         "preprocessing": {"scaling": "pareto"},
                         "n_components": 2,
-                        "validation": {"repeats": 2, "data_splits": 2, "seed": 42},
+                        "validation": {
+                            "repeats": 2, "data_splits": 2, "seed": 42,
+                            "engine": "simpls",
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -614,6 +664,89 @@ class PcaWorkerTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual(payload["performance"]["engine"], "mixomics")
+            simpls_job = json.loads(job.read_text(encoding="utf-8"))
+            simpls_job["engine"] = "simpls"
+            job.write_text(json.dumps(simpls_job), encoding="utf-8")
+            simpls_result = directory_path / "simpls.result.json"
+            completed = subprocess.run(
+                [str(find_rscript()), str(root / "r" / "plsda_worker.R"),
+                 str(job), str(simpls_result)],
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            simpls_payload = json.loads(simpls_result.read_text(encoding="utf-8"))
+            self.assertEqual(simpls_payload["performance"]["engine"], "simpls")
+            self.assertEqual(simpls_payload["engine"]["name"], "SIMPLS")
+            self.assertRegex(simpls_payload["engine"]["version"], r"^pls\s")
+            np.testing.assert_allclose(
+                simpls_payload["performance"]["r2y"],
+                payload["performance"]["r2y"],
+                rtol=1e-10,
+                atol=1e-10,
+            )
+            np.testing.assert_allclose(
+                simpls_payload["performance"]["q2y"],
+                payload["performance"]["q2y"],
+                rtol=1e-10,
+                atol=1e-10,
+            )
+            distributed_environment = os.environ.copy()
+            distributed_environment.update({
+                "ARII_DISTRIBUTED_TASKS": "2",
+                "ARII_PARALLEL_WORKERS": "1",
+            })
+            for task_index in range(2):
+                task_environment = {
+                    **distributed_environment,
+                    "ARII_DISTRIBUTED_INDEX": str(task_index),
+                }
+                partial_result = directory_path / f"partial-result-{task_index}.json"
+                completed = subprocess.run(
+                    [str(find_rscript()), str((root / "r" / "plsda_worker.R").resolve()),
+                     str(job), str(partial_result)],
+                    env=task_environment,
+                    capture_output=True, text=True, encoding="utf-8",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertTrue(partial_result.with_suffix(".rds").is_file())
+            merged_result = directory_path / "distributed.result.json"
+            merge_environment = {
+                **distributed_environment,
+                "ARII_DISTRIBUTED_MERGE": "1",
+            }
+            completed = subprocess.run(
+                [str(find_rscript()), str((root / "r" / "plsda_worker.R").resolve()),
+                 str(job), str(merged_result)],
+                env=merge_environment,
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            merged_payload = json.loads(merged_result.read_text(encoding="utf-8"))
+            self.assertEqual(merged_payload["performance"]["distributed_tasks"], 2)
+            self.assertEqual(merged_payload["performance"]["workers_per_task"], [1, 1])
+            for metric in ("mean_accuracy", "mean_ber", "r2y", "q2y", "cv_auc_macro"):
+                np.testing.assert_allclose(
+                    merged_payload["performance"][metric],
+                    simpls_payload["performance"][metric],
+                    rtol=1e-12, atol=1e-12,
+                )
+            self.assertEqual(
+                merged_payload["performance"]["repetitions"],
+                simpls_payload["performance"]["repetitions"],
+            )
+            np.testing.assert_allclose(
+                merged_payload["scores"], simpls_payload["scores"],
+                rtol=1e-12, atol=1e-12,
+            )
+            np.testing.assert_allclose(
+                merged_payload["loadings"], simpls_payload["loadings"],
+                rtol=1e-12, atol=1e-12,
+            )
+            job.write_text(json.dumps({
+                **simpls_job,
+                "engine": "mixomics",
+            }), encoding="utf-8")
             alternative_payloads = {}
             for strategy, validation, expected_submodels in (
                 ("monte_carlo", {"repeats": 3, "data_splits": 2,
@@ -660,6 +793,18 @@ class PcaWorkerTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             orth_payload = json.loads(orth_result.read_text(encoding="utf-8"))
+            simpls_orth_job = {**orth_job, "engine": "simpls"}
+            job.write_text(json.dumps(simpls_orth_job), encoding="utf-8")
+            simpls_orth_result = directory_path / "orthogonalized-simpls.result.json"
+            completed = subprocess.run(
+                [str(find_rscript()), str(root / "r" / "plsda_worker.R"),
+                 str(job), str(simpls_orth_result)],
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            simpls_orth_payload = json.loads(
+                simpls_orth_result.read_text(encoding="utf-8")
+            )
         self.assertEqual(payload["method"], "plsda")
         self.assertEqual(payload["preprocessing"]["scaling"], "pareto")
         self.assertEqual(payload["class_levels"], ["A", "B"])
@@ -695,7 +840,12 @@ class PcaWorkerTests(unittest.TestCase):
             (4, 2, 2),
         )
         self.assertEqual(orth_payload["method"], "orthogonalized_plsda")
+        self.assertEqual(simpls_orth_payload["method"], "orthogonalized_plsda")
+        self.assertEqual(simpls_orth_payload["engine"]["name"], "SIMPLS")
         self.assertTrue(orth_payload["orthogonalization"]["predictions_unchanged"])
+        self.assertTrue(
+            simpls_orth_payload["orthogonalization"]["predictions_unchanged"]
+        )
         self.assertEqual(len(orth_payload["candidate_models"]), 2)
         self.assertEqual(
             orth_payload["performance"]["selection"]["current_component"],
@@ -708,6 +858,10 @@ class PcaWorkerTests(unittest.TestCase):
         np.testing.assert_allclose(
             orth_payload["performance"]["calibration"]["decision_values"],
             payload["performance"]["calibration"]["decision_values"],
+        )
+        np.testing.assert_allclose(
+            simpls_orth_payload["performance"]["calibration"]["decision_values"],
+            simpls_payload["performance"]["calibration"]["decision_values"],
         )
         orth_decisions = np.asarray(
             orth_payload["performance"]["calibration"]["decision_values"], dtype=float
@@ -757,7 +911,10 @@ class PcaWorkerTests(unittest.TestCase):
                         "current_components": 2,
                         "current_orthogonal_components": 0,
                         "orthogonal_selection": "manual",
-                        "validation": {"repeats": 1, "data_splits": 2},
+                        "validation": {
+                            "repeats": 1, "data_splits": 2,
+                            "engine": "simpls",
+                        },
                         "permutations": {"count": 3, "seed": 123},
                     }
                 ),
@@ -774,6 +931,28 @@ class PcaWorkerTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual(payload["validation"]["engine"], "mixomics")
+            simpls_job = json.loads(job.read_text(encoding="utf-8"))
+            simpls_job["engine"] = "simpls"
+            job.write_text(json.dumps(simpls_job), encoding="utf-8")
+            simpls_result = directory_path / "permutation-simpls.json"
+            completed = subprocess.run(
+                [str(find_rscript()), str(root / "r" / "permutation_worker.R"),
+                 str(job), str(simpls_result)],
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            simpls_payload = json.loads(simpls_result.read_text(encoding="utf-8"))
+            self.assertEqual(simpls_payload["validation"]["engine"], "simpls")
+            for metric in ("r2y", "q2y", "ber", "auc_macro"):
+                np.testing.assert_allclose(
+                    simpls_payload["null"][metric], payload["null"][metric],
+                    rtol=1e-10, atol=1e-10,
+                )
+            job.write_text(json.dumps({
+                **simpls_job,
+                "engine": "mixomics",
+            }), encoding="utf-8")
             for strategy, validation in (
                 ("monte_carlo", {"repeats": 2, "data_splits": 2,
                                  "train_fraction": 0.8, "seed": 7}),
@@ -829,6 +1008,55 @@ class PcaWorkerTests(unittest.TestCase):
         for value in payload["empirical_p"].values():
             self.assertGreaterEqual(value, 0.25)
             self.assertLessEqual(value, 1.0)
+
+    def test_simpls_complete_engine_supports_multiclass_plsda(self) -> None:
+        root = Path(__file__).parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            dataset = directory_path / "multiclass.csv"
+            names = [f"{group}{index}" for group in "ABC" for index in range(4)]
+            with dataset.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.writer(stream)
+                writer.writerow(["ppm", *names])
+                for variable in range(18):
+                    values = []
+                    for group_index in range(3):
+                        for sample_index in range(4):
+                            signal = 0.7 if variable // 6 == group_index else -0.15
+                            values.append(
+                                signal
+                                + math.sin((variable + 1) * (sample_index + 2)) * 0.04
+                            )
+                    writer.writerow([variable / 10, *values])
+            job = directory_path / "multiclass.job.json"
+            result = directory_path / "multiclass.result.json"
+            job.write_text(json.dumps({
+                "engine": "simpls",
+                "dataset": {"path": str(dataset)},
+                "selected_sample_indices": list(range(12)),
+                "classes": ["A"] * 4 + ["B"] * 4 + ["C"] * 4,
+                "biological_ids": [f"id-{index}" for index in range(12)],
+                "preprocessing": {"scaling": "pareto"},
+                "n_components": 2,
+                "validation": {
+                    "strategy": "random_subsets", "repeats": 1,
+                    "data_splits": 2, "seed": 19,
+                },
+            }), encoding="utf-8")
+            completed = subprocess.run(
+                [str(find_rscript()), str(root / "r" / "plsda_worker.R"),
+                 str(job), str(result)],
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+        self.assertEqual(payload["engine"]["name"], "SIMPLS")
+        self.assertEqual(payload["class_levels"], ["A", "B", "C"])
+        self.assertEqual(payload["performance"]["engine"], "simpls")
+        self.assertEqual(
+            np.asarray(payload["performance"]["calibration"]["decision_values"]).shape,
+            (12, 3, 2),
+        )
 
 
 class ClassificationMetricTests(unittest.TestCase):

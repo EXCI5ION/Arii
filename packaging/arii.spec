@@ -1,13 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+import tomllib
 from PyInstaller.building.datastruct import TOC
 
 project_root = Path(SPECPATH).parent
 icon = project_root / "assets" / "icons" / "arii.ico"
 build_info = project_root / "build" / "arii-build-info.json"
+with (project_root / "pyproject.toml").open("rb") as stream:
+    app_version = tomllib.load(stream)["project"]["version"]
+documentation_files = [
+    project_root / "docs" / "pdf" / f"Arii-manual-de-usuario-versión{app_version}.pdf",
+    project_root / "docs" / "pdf" / f"Arii-documentacion-cientifica-versión{app_version}.pdf",
+]
 if not build_info.is_file():
     raise FileNotFoundError(
         "Falta build/arii-build-info.json; compile mediante scripts/build_windows.ps1"
+    )
+missing_documentation = [path for path in documentation_files if not path.is_file()]
+if missing_documentation:
+    raise FileNotFoundError(
+        "Falta documentación PDF de la versión actual: "
+        + ", ".join(str(path) for path in missing_documentation)
     )
 
 a = Analysis(
@@ -17,7 +30,7 @@ a = Analysis(
     datas=[
         (str(project_root / "r"), "r"),
         (str(project_root / "assets" / "icons"), "assets/icons"),
-        (str(project_root / "docs" / "pdf"), "docs/pdf"),
+        *((str(path), "docs/pdf") for path in documentation_files),
         (str(build_info), "."),
     ],
     hiddenimports=["keyring.backends.Windows", "keyring.backends.fail"],

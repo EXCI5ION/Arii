@@ -26,19 +26,22 @@
 </p>
 
 Arii es una aplicación de código abierto para el análisis quimiométrico de matrices ómicas. Proporciona una interfaz gráfica para
-PCA, PLS-DA y OPLS-DA sobre el paquete `mixOmics`.
+PCA con `mixOmics` y para PLS-DA/OPLS-DA con dos motores seleccionables:
+`mixOmics` o SIMPLS mediante el paquete R `pls`.
 
 La ejecución local y el primer adaptador remoto Slurm comparten un contrato de trabajo. Consulte docs/cluster-execution-design.md.
 La configuración inicial está disponible en la GUI; una guía sin conocimientos previos se encuentra en docs/cluster-user-guide.md.
 
-Versión actual: **1.1.0**.
+Versión actual: **Arii 1.2.0**, con dos motores supervisados y runtime remoto
+independiente.
 
 ## Descargar para Windows
 
-[Descargar Arii 1.1.0 para Windows de 64 bits](https://github.com/EXCI5ION/Arii/releases/download/v1.1.0/Arii-1.1.0-windows-x64.exe)
+[Descargar Arii 1.2.0 para Windows de 64 bits](https://github.com/EXCI5ION/Arii/releases/download/v1.2.0/Arii-1.2.0-windows-x64.exe)
 
 El instalador incluye Arii, sus workers estadísticos y un runtime privado de R
-con [`mixOmics`](https://mixomics.org/).
+con [`mixOmics`](https://mixomics.org/) y
+[`pls`](https://cran.r-project.org/package=pls).
 
 Consulte la [última versión publicada](https://github.com/EXCI5ION/Arii/releases/latest) y
 sus notas de lanzamiento.
@@ -74,7 +77,7 @@ sudo arii-update --uninstall
 ### macOS — instalación global
 
 En macOS 13 o posterior, el instalador detecta Apple Silicon o Intel y prepara
-un runtime privado con Python 3.12, R 4.5.3, `mixOmics` y `jsonlite`:
+un runtime privado con Python 3.12, R 4.5.3, `mixOmics`, `pls` y `jsonlite`:
 
 ```bash
 git clone --depth 1 https://github.com/EXCI5ION/Arii.git
@@ -90,32 +93,38 @@ arii-gui                    # interfaz gráfica
 arii --help                 # interfaz de consola
 sudo arii-update            # buscar e instalar una versión estable nueva
 sudo arii-update --repair
-sudo arii-update --uninstall
+sudo arii-uninstall
 ```
 
 ## Servidor o clúster Linux — consola
 
-El instalador usa `curl` o `wget`. La versión del runtime es independiente de la
-aplicación de escritorio; Arii 1.1.0 continúa utilizando el runtime remoto 1.0.0.
-Puede instalarse en el espacio personal del usuario con:
+El instalador usa `curl` o `wget`. La aplicación 1.2.0 y el runtime remoto tienen
+ciclos independientes: el flujo con dos motores usa el runtime 1.1.0, que
+incorpora `mixOmics`, `pls` y `jsonlite`. Puede instalarse en el espacio personal
+del usuario con:
 
 ```bash
-ARII_RUNTIME_VERSION=1.0.0
+ARII_RELEASE_VERSION=1.2.0
+ARII_RUNTIME_VERSION=1.1.0
 wget -O install-arii-server.sh \
-  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RUNTIME_VERSION}/cluster/install-server.sh"
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RELEASE_VERSION}/cluster/install-server.sh"
 less install-arii-server.sh
-ARII_VERSION="$ARII_RUNTIME_VERSION" bash install-arii-server.sh
+ARII_VERSION="$ARII_RUNTIME_VERSION" \
+ARII_RELEASE_BASE_URL="https://github.com/EXCI5ION/Arii/releases/download/v${ARII_RELEASE_VERSION}" \
+  bash install-arii-server.sh
 ```
 
 ## Funcionalidades
 
-En su versión 1.1.0, Arii permite:
+La versión 1.2.0 permite:
 
 - Importar matrices CSV, TSV y TXT con muestras en filas o columnas
 - Trabajar con perfiles continuos y tablas de características discretas
 - Asignar clases e individuos biológicos desde una tabla editable
 - Aplicar centrado y escalado Pareto, de varianza unitaria o sin escalado
-- Calcular PCA, PLS-DA y OPLS-DA mediante `mixOmics`
+- Calcular PCA mediante `mixOmics`
+- Elegir `mixOmics` o SIMPLS (`pls::simpls.fit`) como motor completo de PLS-DA
+  y OPLS-DA, incluida su validación y sus permutaciones
 - Evaluar modelos supervisados con varias opciones de validación cruzada
 - Seleccionar la complejidad del modelo y consultar las métricas estadísticas
 - Explorar scores, loadings, T² de Hotelling y gráficos de valores de carga
@@ -129,9 +138,10 @@ En su versión 1.1.0, Arii permite:
 
 ## Ejecución en servidor o clúster
 
-[`Arii-1.0.0-cluster-runtime-linux-x86_64.tar.gz`](https://github.com/EXCI5ION/Arii/releases/download/v1.0.0/Arii-1.0.0-cluster-runtime-linux-x86_64.tar.gz)
-es exclusivamente el motor de cálculo para servidores y clústeres Linux x86-64
-compatibles con glibc 2.28 o posterior.
+`Arii-1.1.0-cluster-runtime-linux-x86_64.tar.gz` es exclusivamente el motor de
+cálculo para servidores y clústeres Linux x86-64 compatibles con glibc 2.28 o
+posterior. Se publica como asset del release de Arii 1.2.0. El artefacto
+histórico 1.0.0 no contiene `pls` y no admite el flujo de dos motores.
 
 Consulta la [guía de uso del clúster](docs/cluster-user-guide.md) y las
 [instrucciones del runtime de servidor](cluster/runtime/README-SERVER.md).
@@ -148,11 +158,11 @@ python -m pytest -q
 
 ## Documentación
 
-- [Manual de usuario (fuente LaTeX)](docs/main.tex)
-- [Manual de usuario (PDF 1.1.0)](docs/pdf/Arii-manual-de-usuario-versión1.1.0.pdf)
+- [Manual de usuario 1.2.0 (fuente LaTeX)](docs/manual.tex)
+- [Manual de usuario 1.2.0 en PDF](docs/pdf/Arii-manual-de-usuario-versión1.2.0.pdf)
 - [Documentación científica (GitHub)](docs/SCIENTIFIC_DOCUMENTATION.md)
-- [Documentación científica (fuente LaTeX)](docs/scientific_documentation.tex)
-- [Documentación científica (PDF 1.1.0)](docs/pdf/Arii-documentacion-cientifica-versión1.1.0.pdf)
+- [Documentación científica 1.2.0 (fuente LaTeX)](docs/scientific_documentation.tex)
+- [Documentación científica 1.2.0 en PDF](docs/pdf/Arii-documentacion-cientifica-versión1.2.0.pdf)
 - [Referencia rápida](docs/QUICK_REFERENCE.md)
 - [Índice completo de documentación](docs/README.md)
 
@@ -162,10 +172,9 @@ Los metadatos de autoría y versión se encuentran en
 [`CITATION.cff`](CITATION.cff). GitHub puede generar desde ese archivo una
 referencia en formatos APA y BibTeX.
 
-Para citar específicamente Arii 1.1.0, utilice el DOI
-[`10.5281/zenodo.24211548`](https://doi.org/10.5281/zenodo.24211548).
-El DOI conceptual
-[`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788)
+Hasta que Zenodo asigne el DOI específico de Arii 1.2.0, `CITATION.cff` utiliza
+el DOI conceptual
+[`10.5281/zenodo.23167788`](https://doi.org/10.5281/zenodo.23167788), que
 representa el proyecto Arii y dirige siempre a su versión más reciente.
 
 ## Licencia

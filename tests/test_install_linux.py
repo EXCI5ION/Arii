@@ -10,6 +10,14 @@ import install_linux as installer
 
 
 class LinuxInstallerPythonTests(unittest.TestCase):
+    def test_scientific_runtime_contains_both_supervised_engines(self) -> None:
+        specification = Path("cluster/environment-linux-64.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("bioconductor-mixomics=6.34.0", specification)
+        self.assertIn("r-pls=2.9_0", specification)
+        self.assertIn("r-jsonlite=2.0.0", specification)
+
     def test_project_declares_the_same_supported_python_range(self) -> None:
         project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))[
             "project"

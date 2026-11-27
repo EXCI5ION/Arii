@@ -3,7 +3,7 @@ if (length(args) != 1L) {
   stop("Uso: Rscript runtime_manifest.R <salida.json>")
 }
 
-roots <- c("mixOmics", "jsonlite")
+roots <- c("mixOmics", "pls", "jsonlite")
 relocatable <- identical(Sys.getenv("ARII_RELOCATABLE_MANIFEST"), "1")
 installed <- installed.packages()
 missing <- setdiff(roots, rownames(installed))

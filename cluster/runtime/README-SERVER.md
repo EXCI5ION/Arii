@@ -4,6 +4,9 @@ Este paquete **no es la aplicación de escritorio** y no contiene una interfaz
 gráfica. Está destinado a servidores o clústeres Linux x86-64 cuyos nodos de
 cálculo sean compatibles con glibc 2.28 o posterior.
 
+Incluye R, `mixOmics`, `pls` y `jsonlite` para ejecutar los dos motores
+estadísticos de Arii sin instalar paquetes en la cuenta del usuario.
+
 No contiene usuarios, contraseñas, claves SSH, direcciones institucionales,
 datasets, resultados ni configuraciones Slurm. Cada investigador debe usar su
 propia cuenta SSH/Slurm.
@@ -13,22 +16,25 @@ propia cuenta SSH/Slurm.
 Desde una sesión SSH en el servidor o nodo de acceso:
 
 ```bash
-ARII_VERSION=1.0.0
+ARII_RELEASE_VERSION=1.2.0
+ARII_RUNTIME_VERSION=1.1.0
 wget -O install-arii-server.sh \
-  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_VERSION}/cluster/install-server.sh"
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v${ARII_RELEASE_VERSION}/cluster/install-server.sh"
 less install-arii-server.sh
-ARII_VERSION="$ARII_VERSION" bash install-arii-server.sh
+ARII_VERSION="$ARII_RUNTIME_VERSION" \
+ARII_RELEASE_BASE_URL="https://github.com/EXCI5ION/Arii/releases/download/v${ARII_RELEASE_VERSION}" \
+  bash install-arii-server.sh
 ```
 
 Si `wget` no está disponible, la descarga inicial puede hacerse con:
 
 ```bash
 curl -fLo install-arii-server.sh \
-  "https://raw.githubusercontent.com/EXCI5ION/Arii/v1.0.0/cluster/install-server.sh"
+  "https://raw.githubusercontent.com/EXCI5ION/Arii/v1.2.0/cluster/install-server.sh"
 ```
 
 El script instala el runtime bajo
-`$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64`, sin
+`$HOME/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64`, sin
 `sudo` y sin modificar R, Python o Conda del sistema. Antes de extraerlo verifica
 el checksum publicado. Puede elegirse otra ruta absoluta mediante
 `ARII_INSTALL_BASE`.
@@ -39,9 +45,9 @@ Descomprima el archivo en una carpeta versionada dentro de su espacio personal:
 
 ```bash
 mkdir -p "$HOME/arii/runtime/releases"
-tar -xzf Arii-1.0.0-cluster-runtime-linux-x86_64.tar.gz \
+tar -xzf Arii-1.1.0-cluster-runtime-linux-x86_64.tar.gz \
   -C "$HOME/arii/runtime/releases"
-cd "$HOME/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64"
+cd "$HOME/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64"
 ./install-runtime.sh
 ```
 
@@ -54,7 +60,7 @@ trabajo se haya detenido.
 Configure en Arii la ruta remota:
 
 ```text
-/home/USUARIO/arii/runtime/releases/Arii-1.0.0-cluster-runtime-linux-x86_64/bin/Rscript
+/home/USUARIO/arii/runtime/releases/Arii-1.1.0-cluster-runtime-linux-x86_64/bin/Rscript
 ```
 
 ## Prueba mediante Slurm
@@ -76,5 +82,5 @@ administradores y permanecer en modo de solo lectura para los usuarios.
 Compruebe el SHA-256 publicado junto al archivo antes de instalarlo:
 
 ```bash
-sha256sum -c SHA256SUMS-cluster-1.0.0.txt
+sha256sum -c SHA256SUMS-cluster-1.1.0.txt
 ```

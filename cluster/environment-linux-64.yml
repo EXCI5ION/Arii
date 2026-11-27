@@ -5,4 +5,5 @@ channels:
 dependencies:
   - r-base=4.5.3
   - bioconductor-mixomics=6.34.0
+  - r-pls=2.9_0
   - r-jsonlite=2.0.0

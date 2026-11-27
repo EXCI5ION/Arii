@@ -43,11 +43,14 @@ procedentes de la GUI o de un proyecto `.arii`.
 El transporte SSH integrado —o PuTTY/Pageant como alternativa— abre la conexión
 sin prompts interactivos, transfiere las entradas, llama a `sbatch`, consulta
 `squeue` y descarga `result.json`. La GUI muestra el estado durante todo el
-ciclo. Las permutaciones pueden dividirse en trabajos independientes,
-ejecutarse en varios nodos y reunirse con validación de índices. Se evita `srun`
+ciclo. Random subsets y Monte Carlo pueden dividir folds entre trabajos;
+leave-one-out y Venetian blinds permanecen en un trabajo, aunque usan varios
+procesos dentro del nodo. Las permutaciones pueden dividirse en trabajos
+independientes, ejecutarse en varios nodos y reunirse con validación de contrato
+e índices. Se evita `srun`
 cuando el clúster no puede resolver la identidad del usuario en nodos
 secundarios. La cancelación segura y la reanudación continúan fuera del alcance
-de la versión 1.1.0.
+de la versión 1.2.0.
 
 ## CPU y memoria
 
@@ -57,7 +60,19 @@ partir de la RAM disponible y del tamaño de la matriz. En Slurm, CPU y memoria 
 por trabajo y por nodo; las bibliotecas BLAS se limitan a un hilo para evitar
 sobresuscripción.
 
-## Trabajo posterior a la versión 1.1.0
+Los folds y las permutaciones se identifican mediante índices globales y sus
+semillas se derivan de forma determinista. Cambiar la cantidad de procesos o
+nodos no debe cambiar las particiones ni las etiquetas permutadas, aunque sistema,
+arquitectura o BLAS pueden producir diferencias de redondeo dentro de tolerancias.
+La fusión de permutaciones rechaza bloques con método, semilla, validación, motor,
+modo, cantidad total o resultado observado incompatibles, así como índices
+ausentes, duplicados o fuera de rango.
+
+Más memoria no acelera un trabajo que ya cabe; evita paginación y fallos al
+mantener modelos concurrentes. Más nodos sólo ayudan mientras existan tareas
+independientes suficientes. Arii no usa ni consulta la GPU.
+
+## Trabajo posterior a la versión 1.2.0
 
 La conexión actual confirma la huella SSH y puede instalar la clave administrada
 por Arii. Una versión posterior podrá transferir e instalar el runtime desde la
@@ -68,5 +83,6 @@ no debe construirse sobre la cuenta personal de un investigador.
 
 La aplicación de escritorio y el runtime remoto se versionan de forma
 independiente. Los workers de la aplicación se transfieren con cada trabajo; el
-runtime proporciona R, `mixOmics`, `jsonlite` y sus dependencias. Por ello Arii
-1.1.0 continúa utilizando el runtime de clúster 1.0.0.
+runtime proporciona R, `mixOmics`, `pls`, `jsonlite` y sus dependencias. El
+flujo remoto con dos motores exige runtime 1.1.0 o posterior; el artefacto 1.0.0
+no contiene `pls`.
